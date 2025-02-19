@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -27,8 +27,39 @@ export default function Home() {
   const [result, setResult] = useState<AadhaarData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCamera, setSelectedCamera] = useState<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const webcamRef = useRef<Webcam>(null);
+
+  useEffect(() => {
+    // Get available cameras when component mounts
+    const getCameras = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        setCameras(videoDevices);
+
+        // For mobile devices, try to select the back camera
+        const backCamera = videoDevices.find(device => 
+          device.label.toLowerCase().includes('back') ||
+          device.label.toLowerCase().includes('rear') ||
+          device.label.toLowerCase().includes('environment')
+        );
+
+        if (backCamera) {
+          setSelectedCamera(backCamera.deviceId);
+        } else if (videoDevices.length > 0) {
+          setSelectedCamera(videoDevices[0].deviceId);
+        }
+      } catch (err) {
+        console.error('Error accessing cameras:', err);
+        setError('Failed to access camera devices');
+      }
+    };
+
+    getCameras();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,6 +180,13 @@ export default function Home() {
     }
   };
 
+  const videoConstraints = {
+    width: 1280,
+    height: 720,
+    deviceId: selectedCamera,
+    facingMode: selectedCamera ? undefined : 'environment'
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto">
@@ -187,6 +225,7 @@ export default function Home() {
                         ref={webcamRef}
                         screenshotFormat="image/jpeg"
                         className="w-full"
+                        videoConstraints={videoConstraints}
                       />
                     </div>
                     <div className="flex space-x-2">
