@@ -1,0 +1,130 @@
+{
+  "info": {
+    "name": "Aadhaar API",
+    "description": "Collection for testing Aadhaar QR Code API endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Parse Aadhaar QR Data",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"qrData\": \"123456789012|John Doe|M|1990|S/O John Smith|Mumbai|Mumbai|Mumbai|Maharashtra|400001\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/aadhaar",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "aadhaar"]
+        },
+        "description": "Parse Aadhaar QR code data and return structured information"
+      },
+      "response": [
+        {
+          "name": "Successful Response",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"qrData\": \"123456789012|John Doe|M|1990|S/O John Smith|Mumbai|Mumbai|Mumbai|Maharashtra|400001\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/aadhaar",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "aadhaar"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n    \"success\": true,\n    \"data\": {\n        \"uid\": \"123456789012\",\n        \"name\": \"John Doe\",\n        \"gender\": \"M\",\n        \"yob\": \"1990\",\n        \"co\": \"S/O John Smith\",\n        \"vtc\": \"Mumbai\",\n        \"po\": \"Mumbai\",\n        \"dist\": \"Mumbai\",\n        \"state\": \"Maharashtra\",\n        \"pc\": \"400001\"\n    },\n    \"message\": \"Aadhaar data parsed successfully\"\n}"
+        },
+        {
+          "name": "Invalid QR Data",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"qrData\": \"invalid|data\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/aadhaar",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "aadhaar"]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n    \"error\": \"Invalid QR data format\"\n}"
+        },
+        {
+          "name": "Missing QR Data",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/aadhaar",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "aadhaar"]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n    \"error\": \"QR data is required\"\n}"
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    }
+  ]
+}
