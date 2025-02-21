@@ -11,6 +11,7 @@ export interface AadhaarResponse {
     dist: string;
     state: string;
     pc: string;
+    photo?: string | null;
   };
   error?: string;
   message?: string;

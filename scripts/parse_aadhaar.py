@@ -38,17 +38,86 @@ def extract_qr_data(img):
         # Convert to grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
-        # Decode QR code
-        qr_codes = decode(gray)
+        # Try different thresholding methods
+        methods = [
+            lambda x: x,  # Original
+            lambda x: cv2.threshold(x, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],  # Otsu's method
+            lambda x: cv2.adaptiveThreshold(x, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)  # Adaptive
+        ]
         
-        if not qr_codes:
-            raise ValueError("No QR code detected in the image")
+        for method in methods:
+            processed = method(gray)
+            qr_codes = decode(processed)
             
-        # Get first QR code data
-        qr_data = qr_codes[0].data.decode("utf-8")
-        return qr_data
+            if qr_codes:
+                # Get first QR code data
+                qr_data = qr_codes[0].data.decode("utf-8")
+                return qr_data
+                
+        raise ValueError("No QR code detected in the image")
     except Exception as e:
         raise ValueError(f"Failed to extract QR data: {str(e)}")
+
+def find_jp2_markers(byte_data):
+    """Finds possible JPEG 2000 start markers in the given data."""
+    markers = [
+        b'\x00\x00\x00\x0C\x6A\x50\x20\x20',  # JP2 signature
+        b'\xFF\x4F\xFF\x51',                   # JPEG 2000 codestream
+        b'\xFF\xD8\xFF',                       # JPEG signature
+        b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A'   # PNG signature
+    ]
+    
+    for marker in markers:
+        pos = byte_data.find(marker)
+        if pos != -1:
+            return pos, marker
+    return None, None
+
+def extract_aadhaar_photo(decompressed_data):
+    """Extracts photo from QR data supporting multiple formats."""
+    try:
+        start_pos, marker = find_jp2_markers(decompressed_data)
+        if start_pos is None:
+            return None
+
+        # Find end of image based on format
+        if marker in [b'\xFF\xD8\xFF', b'\xFF\x4F\xFF\x51']:  # JPEG/JPEG2000
+            end_pos = decompressed_data.find(b'\xFF\xD9', start_pos)
+            if end_pos != -1:
+                end_pos += 2
+        elif marker == b'\x89\x50\x4E\x47':  # PNG
+            # Find IEND chunk
+            end_pos = decompressed_data.find(b'IEND', start_pos)
+            if end_pos != -1:
+                end_pos += 8
+        else:
+            # JP2 format
+            end_pos = len(decompressed_data)
+
+        if end_pos == -1:
+            return None
+
+        # Extract image data
+        image_bytes = decompressed_data[start_pos:end_pos]
+        
+        # Try to decode and re-encode as JPEG for consistent frontend display
+        try:
+            # Convert to numpy array
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if img is not None:
+                # Encode as JPEG
+                _, buffer = cv2.imencode('.jpg', img)
+                photo_base64 = base64.b64encode(buffer).decode('utf-8')
+                return photo_base64
+        except:
+            # If conversion fails, return original bytes as base64
+            return base64.b64encode(image_bytes).decode('utf-8')
+            
+        return None
+    except Exception:
+        return None
 
 def parse_xml_qr_data(xml_data):
     """Parses Aadhaar XML QR format"""
@@ -67,7 +136,8 @@ def parse_xml_qr_data(xml_data):
                 "po": root.get("po", ""),
                 "dist": root.get("dist", ""),
                 "state": root.get("state", ""),
-                "pc": root.get("pc", "")
+                "pc": root.get("pc", ""),
+                "photo": None
             }
         }
     except ET.ParseError as e:
@@ -85,11 +155,11 @@ def decompress_qr_data(byte_array):
     """Decompresses the Aadhaar Secure QR byte array"""
     try:
         decompressed_data = gzip.decompress(byte_array)
-        return decompressed_data.decode('ISO-8859-1')
+        return decompressed_data
     except Exception as e:
         raise ValueError(f"Failed to decompress QR data: {str(e)}")
 
-def parse_aadhaar_qr_data(decoded_text):
+def parse_aadhaar_qr_data(decoded_text, photo_data=None):
     """Parses decompressed Aadhaar Secure QR data"""
     try:
         fields = decoded_text.split("ÿ")
@@ -106,7 +176,8 @@ def parse_aadhaar_qr_data(decoded_text):
                 "po": "",  # Not available in secure QR
                 "dist": fields[10],
                 "state": fields[13],
-                "pc": fields[11]
+                "pc": fields[11],
+                "photo": photo_data
             }
         }
     except IndexError as e:
@@ -131,7 +202,15 @@ def process_qr_data(input_data):
         # Process as secure QR
         byte_array = convert_base10_to_bytes(qr_data)
         decompressed_data = decompress_qr_data(byte_array)
-        return parse_aadhaar_qr_data(decompressed_data)
+        
+        # Try to extract photo
+        photo_base64 = extract_aadhaar_photo(decompressed_data)
+        
+        # Parse text data
+        return parse_aadhaar_qr_data(
+            decompressed_data.decode('ISO-8859-1'),
+            photo_base64
+        )
         
     except Exception as e:
         return {

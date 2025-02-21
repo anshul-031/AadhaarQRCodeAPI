@@ -19,6 +19,7 @@ interface AadhaarData {
   dist: string;
   state: string;
   pc: string;
+  photo?: string | null;
 }
 
 export default function Home() {
@@ -313,7 +314,19 @@ export default function Home() {
               <h2 className="text-xl font-semibold text-gray-900">
                 Parsed Information
               </h2>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {result.photo && (
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-gray-500 mb-2">Photo</p>
+                    <div className="flex justify-center">
+                      <img
+                        src={`data:image/jpeg;base64,${result.photo}`}
+                        alt="Aadhaar Photo"
+                        className="max-w-[200px] rounded-lg shadow-md"
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <p className="text-sm text-gray-500">Aadhaar Number</p>
                   <p className="font-medium">{result.uid}</p>
