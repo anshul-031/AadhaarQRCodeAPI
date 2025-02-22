@@ -7,7 +7,9 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install system dependencies for zbar (CRUCIAL!)
-RUN apk update && apk add --no-cache libzbar0 zbar-tools build-essential cmake git
+RUN apk update && \
+    apk add --no-cache libzbar0 zbar-tools cmake git \
+    build-base # build-base provides build-essential functionality
 
 # Install Node.js dependencies
 RUN npm ci
