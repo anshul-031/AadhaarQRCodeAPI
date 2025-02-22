@@ -7,9 +7,9 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install system dependencies for zbar (CRUCIAL!)
-RUN apk update && \
-    apk add --no-cache libzbar0 zbar-tools cmake git \
-    build-base # build-base provides build-essential functionality
+RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories && \
+    apk update && \
+    apk add --no-cache libzbar0 zbar-tools cmake git build-base
 
 # Install Node.js dependencies
 RUN npm ci
