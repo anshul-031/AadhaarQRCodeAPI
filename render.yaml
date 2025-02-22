@@ -9,5 +9,7 @@ services:
         value: production
       - key: PYTHON_VERSION
         value: 3.11.0
+    buildCommand: docker build -t aadhaar-qr .
+    startCommand: docker run -p $PORT:3000 aadhaar-qr
     healthCheckPath: /
     autoDeploy: true
