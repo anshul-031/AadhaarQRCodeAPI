@@ -1,7 +1,9 @@
 services:
   - type: web
     name: aadhaar-qr
-    env: node
+    runtime: node
+    region: singapore
+    plan: free
     buildCommand: |
       # Install system packages first
       apt-get update -y && \
@@ -24,3 +26,4 @@ services:
         value: production
       - key: PYTHON_VERSION
         value: 3.11.0
+    autoDeploy: true
