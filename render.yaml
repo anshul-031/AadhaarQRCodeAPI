@@ -5,25 +5,25 @@ services:
     region: singapore
     plan: free
     buildCommand: |
-      # Install system packages first
-      apt-get update -y && \
-      apt-get install -y \
-        python3-pip \
-        python3-dev \
-        libzbar0 \
-        libzbar-dev \
-        python3-opencv \
-        zbar-tools && \
-      # Then install Python dependencies
-      python3 -m pip install --upgrade pip && \
-      python3 -m pip install -r requirements.txt && \
-      # Finally build the Node.js app
-      npm ci && \
-      npm run build
+      # Install Python and pip using pyenv
+      curl https://pyenv.run | bash
+      export PATH="$HOME/.pyenv/bin:$PATH"
+      eval "$(pyenv init -)"
+      eval "$(pyenv virtualenv-init -)"
+      pyenv install 3.11.0
+      pyenv global 3.11.0
+      
+      # Install Python dependencies in user space
+      python3 -m pip install --user --no-cache-dir -r requirements.txt
+      
+      # Build the Node.js app
+      npm ci && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: PATH
+        value: $HOME/.local/bin:$PATH
     autoDeploy: true
