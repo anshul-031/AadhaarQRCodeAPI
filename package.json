@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "install-py-deps": "python3 -m pip install -r requirements.txt"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
