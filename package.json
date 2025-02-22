@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "install-py-deps": "python -m pip install pyaadhaar pyzbar Pillow opencv-python-headless numpy"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
