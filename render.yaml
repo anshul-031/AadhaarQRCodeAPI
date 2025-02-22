@@ -5,25 +5,37 @@ services:
     region: singapore
     plan: free
     buildCommand: |
-      # Install Python and pip using pyenv
-      curl https://pyenv.run | bash
-      export PATH="$HOME/.pyenv/bin:$PATH"
-      eval "$(pyenv init -)"
-      eval "$(pyenv virtualenv-init -)"
-      pyenv install 3.11.0
-      pyenv global 3.11.0
+      # Install system dependencies
+      mkdir -p $HOME/.local/bin
       
-      # Install Python dependencies in user space
-      python3 -m pip install --user --no-cache-dir -r requirements.txt
+      # Install Python and required system packages
+      curl -L https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -o miniforge.sh
+      bash miniforge.sh -b -p $HOME/conda
+      rm miniforge.sh
+      export PATH="$HOME/conda/bin:$PATH"
+      
+      # Create and activate conda environment
+      conda create -n myenv python=3.11 -y
+      source $HOME/conda/bin/activate myenv
+      
+      # Install system libraries using conda
+      conda install -c conda-forge zbar opencv -y
+      
+      # Install Python packages
+      pip install pyaadhaar pyzbar Pillow opencv-python-headless numpy
       
       # Build the Node.js app
       npm ci && npm run build
-    startCommand: npm start
+    startCommand: |
+      source $HOME/conda/bin/activate myenv
+      npm start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PYTHON_VERSION
-        value: 3.11.0
+      - key: PYTHON_PATH
+        value: $HOME/conda/envs/myenv/bin/python
       - key: PATH
-        value: $HOME/.local/bin:$PATH
+        value: $HOME/conda/bin:$HOME/.local/bin:$PATH
+      - key: PYTHONPATH
+        value: $HOME/conda/envs/myenv/lib/python3.11/site-packages
     autoDeploy: true
