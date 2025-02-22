@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "install-py-deps": "python3 -m pip install pyaadhaar pyzbar Pillow opencv-python-headless numpy"
+    "install-py-deps": "python -m pip install pyaadhaar zbar pyzbar Pillow opencv-python-headless numpy"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
