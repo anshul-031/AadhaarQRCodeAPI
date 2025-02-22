@@ -1,0 +1,5 @@
+pyaadhaar==2.0.2
+pyzbar==0.1.9
+Pillow==11.1.0
+opencv-python-headless==4.11.0.86
+numpy==2.2.3

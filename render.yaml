@@ -2,22 +2,16 @@ services:
   - type: web
     name: aadhaar-qr
     env: node
-    buildCommand: |
-      # Install system dependencies
-      apt-get update && apt-get install -y \
-        python3-pip \
-        python3-dev \
-        libzbar0 \
-        libzbar-dev \
-        python3-opencv
-      # Install Python dependencies
-      pip3 install pyaadhaar pyzbar Pillow opencv-python-headless numpy
-      # Build Next.js app
-      npm ci
-      npm run build
+    buildCommand: npm run install-py-deps && npm ci && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
       - key: PYTHON_VERSION
         value: 3.11.0
+    packages:
+      - python3-pip
+      - python3-dev
+      - libzbar0
+      - libzbar-dev
+      - python3-opencv
