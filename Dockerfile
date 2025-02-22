@@ -13,17 +13,14 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files and Python requirements first
+COPY package*.json requirements.txt ./
 
 # Install Node.js dependencies
 RUN npm ci
 
-# Copy Python requirements
-COPY requirements.txt ./
-
-# Install Python dependencies
-RUN python3 -m pip install -r requirements.txt
+# Install Python dependencies directly
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
 COPY . .
