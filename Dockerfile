@@ -1,44 +1,23 @@
-FROM node:20-slim
+# Use a Node.js base image
+FROM node:16-alpine # Or a suitable Node.js image
 
-# Install system dependencies and configure apt for zbar
-RUN apt-get update && \
-    apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-dev \
-    libzbar0 \
-    libzbar-dev \
-    python3-opencv \
-    zbar-tools \
-    pkg-config \
-    build-essential \
-    && ldconfig \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set environment variable for zbar library path
-ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
-
+# Set the working directory
 WORKDIR /app
 
-# Copy package files and Python requirements first
+# Copy package files
 COPY package*.json ./
-COPY requirements.txt ./
+
+# Install system dependencies for zbar (IMPORTANT!)
+RUN apk update && apk add --no-cache libzbar0 zbar-tools build-essential cmake git
 
 # Install Node.js dependencies
-RUN npm ci
+RUN npm install
 
-# Install Python dependencies with specific versions
-RUN pip3 install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application
+# Copy application code
 COPY . .
 
-# Build the Next.js application
-RUN npm run build
+# Your build process (if needed)
+# RUN npm run build
 
-# Expose the port the app runs on
-EXPOSE 3000
-
-# Start the application
-ENV PORT=3000
+# Command to start your application
 CMD ["npm", "start"]
