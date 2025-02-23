@@ -144,7 +144,7 @@ def parse_xml_qr_data_XML(xml_data):
     except ET.ParseError as e:
         raise ValueError(f"Failed to parse XML data: {str(e)}")
 
-def parse_xml_qr_data_QPDA(xml_data):
+def parse_xml_qr_data_QPD(xml_data):
     """Parses Aadhaar XML QR format"""
     try:
         root = ET.fromstring(xml_data)
@@ -159,6 +159,7 @@ def parse_xml_qr_data_QPDA(xml_data):
                 "address": root.get("a", ""),
                 "photo": root.get('i',''), 
                 "signature": root.get('s',''),
+                "mobile": root.get('m',''),
                 "raw_data": xml_data
             }
         }
@@ -190,7 +191,7 @@ def parse_aadhaar_qr_data(decoded_text, photo_data=None):
         return {
             "success": True,
             "data": {
-                "uid": "XXXX-XXXX-"+fields[2][:4],  # last 4 digit Masked Aadhaar number
+                "uid": "xxxxxxxx"+fields[2][:4],  # last 4 digit Masked Aadhaar number
                 "name": fields[3],
                 "issued_date": fields[2][10:12]+"/"+fields[2][8:10]+"/"+fields[2][4:8],
                 "issued_time": fields[2][12:14]+":"+fields[2][14:16]+":"+fields[2][16:18],
@@ -232,8 +233,8 @@ def process_qr_data(input_data):
             return parse_xml_qr_data_XML(qr_data)
             
         # Check if it's XML format
-        if qr_data.startswith("<QPDA"):
-            return parse_xml_qr_data_QPDA(qr_data)
+        if qr_data.startswith("<QPD"):
+            return parse_xml_qr_data_QPD(qr_data)
             
         # Process as secure QR
         byte_array = convert_base10_to_bytes(qr_data)
