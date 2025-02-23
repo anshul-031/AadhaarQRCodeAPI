@@ -148,7 +148,26 @@ def parse_xml_qr_data_QPD(xml_data):
     """Parses Aadhaar XML QR format"""
     try:
         root = ET.fromstring(xml_data)
+        photo_base64 = root.get('i','')
         
+        try:
+            # Decode base64 image data
+            image_bytes = base64.b64decode(photo_base64)
+            # Convert to numpy array
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            # Decode image
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if img is not None:
+                # Encode as JPEG
+                _, buffer = cv2.imencode('.jpg', img)
+                photo_base64 = base64.b64encode(buffer).decode('utf-8')
+            else:
+                photo_base64 = None
+        except Exception as e:
+            print(f"Error processing image: {e}")
+            photo_base64 = None
+
         return {
             "success": True,
             "data": {
@@ -157,7 +176,7 @@ def parse_xml_qr_data_QPD(xml_data):
                 "gender": root.get("g", ""),
                 "dob": root.get("d", ""),
                 "address": root.get("a", ""),
-                "photo": root.get('i',''), 
+                "photo": photo_base64,
                 "signature": root.get('s',''),
                 "mobile": root.get('m',''),
                 "raw_data": xml_data
