@@ -121,15 +121,21 @@ def extract_aadhaar_photo(decompressed_data):
 
 def parse_xml_qr_data_XML(xml_data):
     """Parses Aadhaar XML QR format"""
-    try:
+
+    if xml_data.startswith("</?xml"):
+        xml_data = xml_data.replace("</?xml", "<?xml")
+        root = ET.fromstring(xml_data).attrib
+    else:
         root = ET.fromstring(xml_data)
-        
+    try:
         return {
             "success": True,
             "data": {
                 "uid": root.get("uid", ""),
                 "name": root.get("name", ""),
                 "gender": root.get("gender", ""),
+                "dob": root.get("dob", ""),
+                "address": root.get("co", "") + ", " + root.get("lm", "") + ", "+ root.get("loc", "") + ", " + root.get("vtc", "") + ", " + root.get("dist", "") + ", " + root.get("state", "") + ", " + root.get("pc", ""),
                 "yob": root.get("yob", ""),
                 "co": root.get("co", ""),
                 "vtc": root.get("vtc", ""),
@@ -248,12 +254,16 @@ def process_qr_data(input_data):
             qr_data = input_data
 
         # Check if it's XML format
-        if qr_data.startswith("<?xml"):
+        if qr_data.startswith("<?xml") or qr_data.startswith("</?xml"):
             return parse_xml_qr_data_XML(qr_data)
             
-        # Check if it's XML format
+        # Check if it's QPD XML format
         if qr_data.startswith("<QPD"):
             return parse_xml_qr_data_QPD(qr_data)
+        
+        # # Check if it's QPD XML format
+        # if qr_data.startswith("</?xml"):
+        #     return parse_xml_qr_data_XMLA(qr_data)
             
         # Process as secure QR
         byte_array = convert_base10_to_bytes(qr_data)
