@@ -327,46 +327,62 @@ export default function Home() {
                 )}
 
                 {/* Issued Date & Time */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <p className="text-sm text-gray-500">Issued Date</p>
-                    <p className="font-medium">{result.issued_date}</p>
+                {(result.issued_date || result.issued_time) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    {result.issued_date && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-500">Issued Date</p>
+                        <p className="font-medium">{result.issued_date}</p>
+                      </div>
+                    )}
+                    {result.issued_time && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-500">Issued Time</p>
+                        <p className="font-medium">{result.issued_time}</p>
+                      </div>
+                    )}
                   </div>
-                  <div className="space-y-2">
-                    <p className="text-sm text-gray-500">Issued Time</p>
-                    <p className="font-medium">{result.issued_time}</p>
-                  </div>
-                </div>
+                )}
 
                 {/* Name */}
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Name</p>
-                  <p className="font-medium">{result.name}</p>
-                </div>
+                {result.name && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Name</p>
+                    <p className="font-medium">{result.name}</p>
+                  </div>
+                )}
 
                 {/* Gender */}
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Gender</p>
-                  <p className="font-medium">{result.gender}</p>
-                </div>
+                {result.gender && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Gender</p>
+                    <p className="font-medium">{result.gender}</p>
+                  </div>
+                )}
 
                 {/* Date of Birth */}
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Date of Birth</p>
-                  <p className="font-medium">{result.dob}</p>
-                </div>
+                {result.dob && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Date of Birth</p>
+                    <p className="font-medium">{result.dob}</p>
+                  </div>
+                )}
 
                 {/* Mobile Number */}
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Mobile Number</p>
-                  <p className="font-medium">{result.mobile_number}</p>
-                </div>
+                {result.mobile_number && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Mobile Number</p>
+                    <p className="font-medium">{result.mobile_number}</p>
+                  </div>
+                )}
 
                 {/* Address */}
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Address</p>
-                  <p className="font-medium">{result.address}</p>
-                </div>
+                {result.address && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Address</p>
+                    <p className="font-medium">{result.address}</p>
+                  </div>
+                )}
               </div>
             </div>
           )}

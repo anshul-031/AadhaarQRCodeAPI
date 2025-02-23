@@ -119,7 +119,7 @@ def extract_aadhaar_photo(decompressed_data):
     except Exception:
         return None
 
-def parse_xml_qr_data(xml_data):
+def parse_xml_qr_data_XML(xml_data):
     """Parses Aadhaar XML QR format"""
     try:
         root = ET.fromstring(xml_data)
@@ -143,6 +143,28 @@ def parse_xml_qr_data(xml_data):
         }
     except ET.ParseError as e:
         raise ValueError(f"Failed to parse XML data: {str(e)}")
+
+def parse_xml_qr_data_QPDA(xml_data):
+    """Parses Aadhaar XML QR format"""
+    try:
+        root = ET.fromstring(xml_data)
+        
+        return {
+            "success": True,
+            "data": {
+                "uid": root.get("u", ""),
+                "name": root.get("n", ""),
+                "gender": root.get("g", ""),
+                "dob": root.get("d", ""),
+                "address": root.get("a", ""),
+                "photo": root.get('i',''), 
+                "signature": root.get('s',''),
+                "raw_data": xml_data
+            }
+        }
+    except ET.ParseError as e:
+        raise ValueError(f"Failed to parse XML data: {str(e)}")
+
 
 def convert_base10_to_bytes(qr_data):
     """Converts base10 string to byte array"""
@@ -207,7 +229,11 @@ def process_qr_data(input_data):
 
         # Check if it's XML format
         if qr_data.startswith("<?xml"):
-            return parse_xml_qr_data(qr_data)
+            return parse_xml_qr_data_XML(qr_data)
+            
+        # Check if it's XML format
+        if qr_data.startswith("<QPDA"):
+            return parse_xml_qr_data_QPDA(qr_data)
             
         # Process as secure QR
         byte_array = convert_base10_to_bytes(qr_data)
