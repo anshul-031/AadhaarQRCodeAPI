@@ -137,7 +137,8 @@ def parse_xml_qr_data(xml_data):
                 "dist": root.get("dist", ""),
                 "state": root.get("state", ""),
                 "pc": root.get("pc", ""),
-                "photo": None
+                "photo": None, 
+                "raw_data": root
             }
         }
     except ET.ParseError as e:
@@ -167,17 +168,26 @@ def parse_aadhaar_qr_data(decoded_text, photo_data=None):
         return {
             "success": True,
             "data": {
-                "uid": fields[2],  # Masked Aadhaar number
+                "uid": "XXXX-XXXX-"+fields[2][:4],  # last 4 digit Masked Aadhaar number
                 "name": fields[3],
+                "issued_date": fields[2][10:12]+"/"+fields[2][8:10]+"/"+fields[2][4:8],
+                "issued_time": fields[2][12:14]+":"+fields[2][14:16]+":"+fields[2][16:18],
                 "gender": fields[5],
-                "yob": fields[4].split("-")[0],  # Extract year from DOB
+                "yob": fields[4].split("-")[2],  # Extract year from DOB
+                "dob": fields[4],
+                "mobile_number": fields[17],
+                "email": fields[46],
                 "co": fields[6],
+                "house_no": fields[8],
                 "vtc": fields[7],
                 "po": "",  # Not available in secure QR
-                "dist": fields[10],
+                "street": fields[10],
+                "dist": fields[12],
                 "state": fields[13],
                 "pc": fields[11],
-                "photo": photo_data
+                "address": fields[6]+ ", " +fields[8]+ ", "+fields[10]+ ", "+fields[11]+ ", "+fields[12]+ ", "+fields[13], 
+                "photo": photo_data, 
+                "raw_data": fields
             }
         }
     except IndexError as e:
