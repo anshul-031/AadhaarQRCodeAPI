@@ -1,5 +1,5 @@
 # Stage 1: Build the Next.js app and install dependencies
-FROM node:16 AS build  # Use standard Node image instead of Alpine
+FROM node:16-alpine AS build
 
 WORKDIR /app
 
@@ -7,12 +7,12 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install system dependencies for zbar (CRUCIAL!)
-RUN apt-get update && \
-    apt-get install -y \
-    zbar-tools \
+RUN apk update && \
+    apk add --no-cache \
+    zbar-dev \
     cmake \
     git \
-    build-essential
+    build-base
 
 # Install Node.js dependencies
 RUN npm ci
@@ -30,7 +30,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Create the final image (smaller and more efficient)
-FROM node:16
+FROM node:16-alpine
 
 WORKDIR /app
 
