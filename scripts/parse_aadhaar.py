@@ -123,8 +123,8 @@ def parse_xml_qr_data_XML(xml_data):
     """Parses Aadhaar XML QR format"""
 
     if xml_data.startswith("</?xml"):
-        xml_data = xml_data.replace("</?xml", "<?xml")
-        root = ET.fromstring(xml_data).attrib
+        temp_xml_data = xml_data.replace("</?xml", "<?xml")
+        root = ET.fromstring(temp_xml_data).attrib
     else:
         root = ET.fromstring(xml_data)
     try:
@@ -144,7 +144,7 @@ def parse_xml_qr_data_XML(xml_data):
                 "state": root.get("state", ""),
                 "pc": root.get("pc", ""),
                 "photo": None, 
-                "raw_data": root
+                "raw_data": xml_data
             }
         }
     except ET.ParseError as e:

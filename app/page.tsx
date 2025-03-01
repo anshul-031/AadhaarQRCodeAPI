@@ -17,6 +17,7 @@ interface AadhaarData {
   issued_date: string;
   issued_time: string;
   mobile_number: string;
+  uid?: string;
 }
 
 export default function Home() {
@@ -373,6 +374,14 @@ export default function Home() {
                   <div className="space-y-2">
                     <p className="text-sm text-gray-500">Mobile Number</p>
                     <p className="font-medium">{result.mobile_number}</p>
+                  </div>
+                )}
+
+                {/* Aadhaar Number (UID) */}
+                {result.uid && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Aadhaar Number</p>
+                    <p className="font-medium">{result.uid}</p>
                   </div>
                 )}
 
