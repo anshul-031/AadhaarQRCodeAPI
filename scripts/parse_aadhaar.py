@@ -119,17 +119,23 @@ def extract_aadhaar_photo(decompressed_data):
     except Exception:
         return None
 
-def parse_xml_qr_data(xml_data):
+def parse_xml_qr_data_XML(xml_data):
     """Parses Aadhaar XML QR format"""
-    try:
+
+    if xml_data.startswith("</?xml"):
+        temp_xml_data = xml_data.replace("</?xml", "<?xml")
+        root = ET.fromstring(temp_xml_data).attrib
+    else:
         root = ET.fromstring(xml_data)
-        
+    try:
         return {
             "success": True,
             "data": {
                 "uid": root.get("uid", ""),
                 "name": root.get("name", ""),
                 "gender": root.get("gender", ""),
+                "dob": root.get("dob", ""),
+                "address": root.get("co", "") + ", " + root.get("lm", "") + ", "+ root.get("loc", "") + ", " + root.get("vtc", "") + ", " + root.get("dist", "") + ", " + root.get("state", "") + ", " + root.get("pc", ""),
                 "yob": root.get("yob", ""),
                 "co": root.get("co", ""),
                 "vtc": root.get("vtc", ""),
@@ -137,11 +143,54 @@ def parse_xml_qr_data(xml_data):
                 "dist": root.get("dist", ""),
                 "state": root.get("state", ""),
                 "pc": root.get("pc", ""),
-                "photo": None
+                "photo": None, 
+                "raw_data": xml_data
             }
         }
     except ET.ParseError as e:
         raise ValueError(f"Failed to parse XML data: {str(e)}")
+
+def parse_xml_qr_data_QPD(xml_data):
+    """Parses Aadhaar XML QR format"""
+    try:
+        root = ET.fromstring(xml_data)
+        photo_base64 = root.get('i','')
+        
+        try:
+            # Decode base64 image data
+            image_bytes = base64.b64decode(photo_base64)
+            # Convert to numpy array
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            # Decode image
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if img is not None:
+                # Encode as JPEG
+                _, buffer = cv2.imencode('.jpg', img)
+                photo_base64 = base64.b64encode(buffer).decode('utf-8')
+            else:
+                photo_base64 = None
+        except Exception as e:
+            print(f"Error processing image: {e}")
+            photo_base64 = None
+
+        return {
+            "success": True,
+            "data": {
+                "uid": root.get("u", ""),
+                "name": root.get("n", ""),
+                "gender": root.get("g", ""),
+                "dob": root.get("d", ""),
+                "address": root.get("a", ""),
+                "photo": photo_base64,
+                "signature": root.get('s',''),
+                "mobile": root.get('m',''),
+                "raw_data": xml_data
+            }
+        }
+    except ET.ParseError as e:
+        raise ValueError(f"Failed to parse XML data: {str(e)}")
+
 
 def convert_base10_to_bytes(qr_data):
     """Converts base10 string to byte array"""
@@ -167,17 +216,26 @@ def parse_aadhaar_qr_data(decoded_text, photo_data=None):
         return {
             "success": True,
             "data": {
-                "uid": fields[2],  # Masked Aadhaar number
+                "uid": "xxxxxxxx"+fields[2][:4],  # last 4 digit Masked Aadhaar number
                 "name": fields[3],
+                "issued_date": fields[2][10:12]+"/"+fields[2][8:10]+"/"+fields[2][4:8],
+                "issued_time": fields[2][12:14]+":"+fields[2][14:16]+":"+fields[2][16:18],
                 "gender": fields[5],
-                "yob": fields[4].split("-")[0],  # Extract year from DOB
+                "yob": fields[4].split("-")[2],  # Extract year from DOB
+                "dob": fields[4],
+                "mobile_number": fields[17],
+                "email": fields[46],
                 "co": fields[6],
+                "house_no": fields[8],
                 "vtc": fields[7],
                 "po": "",  # Not available in secure QR
-                "dist": fields[10],
+                "street": fields[10],
+                "dist": fields[12],
                 "state": fields[13],
                 "pc": fields[11],
-                "photo": photo_data
+                "address": fields[6]+ ", " +fields[8]+ ", "+fields[10]+ ", "+fields[11]+ ", "+fields[12]+ ", "+fields[13], 
+                "photo": photo_data, 
+                "raw_data": fields
             }
         }
     except IndexError as e:
@@ -196,8 +254,16 @@ def process_qr_data(input_data):
             qr_data = input_data
 
         # Check if it's XML format
-        if qr_data.startswith("<?xml"):
-            return parse_xml_qr_data(qr_data)
+        if qr_data.startswith("<?xml") or qr_data.startswith("</?xml"):
+            return parse_xml_qr_data_XML(qr_data)
+            
+        # Check if it's QPD XML format
+        if qr_data.startswith("<QPD"):
+            return parse_xml_qr_data_QPD(qr_data)
+        
+        # # Check if it's QPD XML format
+        # if qr_data.startswith("</?xml"):
+        #     return parse_xml_qr_data_XMLA(qr_data)
             
         # Process as secure QR
         byte_array = convert_base10_to_bytes(qr_data)

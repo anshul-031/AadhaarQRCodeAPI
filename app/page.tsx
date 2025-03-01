@@ -9,17 +9,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Webcam from 'react-webcam';
 
 interface AadhaarData {
-  uid: string;
   name: string;
   gender: string;
-  yob: string;
-  co: string;
-  vtc: string;
-  po: string;
-  dist: string;
-  state: string;
-  pc: string;
+  dob: string;
+  address: string;
   photo?: string | null;
+  issued_date: string;
+  issued_time: string;
+  mobile_number: string;
+  uid?: string;
 }
 
 export default function Home() {
@@ -314,9 +312,10 @@ export default function Home() {
               <h2 className="text-xl font-semibold text-gray-900">
                 Parsed Information
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
+                {/* Photo */}
                 {result.photo && (
-                  <div className="md:col-span-2">
+                  <div className="flex flex-col items-center">
                     <p className="text-sm text-gray-500 mb-2">Photo</p>
                     <div className="flex justify-center">
                       <img
@@ -327,46 +326,72 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Aadhaar Number</p>
-                  <p className="font-medium">{result.uid}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Name</p>
-                  <p className="font-medium">{result.name}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Gender</p>
-                  <p className="font-medium">{result.gender}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Year of Birth</p>
-                  <p className="font-medium">{result.yob}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Care of</p>
-                  <p className="font-medium">{result.co}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Village/Town/City</p>
-                  <p className="font-medium">{result.vtc}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Post Office</p>
-                  <p className="font-medium">{result.po}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">District</p>
-                  <p className="font-medium">{result.dist}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">State</p>
-                  <p className="font-medium">{result.state}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-500">Pincode</p>
-                  <p className="font-medium">{result.pc}</p>
-                </div>
+
+                {/* Issued Date & Time */}
+                {(result.issued_date || result.issued_time) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    {result.issued_date && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-500">Issued Date</p>
+                        <p className="font-medium">{result.issued_date}</p>
+                      </div>
+                    )}
+                    {result.issued_time && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-500">Issued Time</p>
+                        <p className="font-medium">{result.issued_time}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Name */}
+                {result.name && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Name</p>
+                    <p className="font-medium">{result.name}</p>
+                  </div>
+                )}
+
+                {/* Gender */}
+                {result.gender && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Gender</p>
+                    <p className="font-medium">{result.gender}</p>
+                  </div>
+                )}
+
+                {/* Date of Birth */}
+                {result.dob && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Date of Birth</p>
+                    <p className="font-medium">{result.dob}</p>
+                  </div>
+                )}
+
+                {/* Mobile Number */}
+                {result.mobile_number && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Mobile Number</p>
+                    <p className="font-medium">{result.mobile_number}</p>
+                  </div>
+                )}
+
+                {/* Aadhaar Number (UID) */}
+                {result.uid && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Aadhaar Number</p>
+                    <p className="font-medium">{result.uid}</p>
+                  </div>
+                )}
+
+                {/* Address */}
+                {result.address && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-500">Address</p>
+                    <p className="font-medium">{result.address}</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
