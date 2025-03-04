@@ -26,6 +26,8 @@ COPY requirements.txt ./
 # Install Python dependencies (AFTER Node.js and zbar system libs)
 RUN python3 -m pip install -r requirements.txt
 
+RUN pip install opencv-python
+
 # Copy application code
 COPY . .
 
