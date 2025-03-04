@@ -18,7 +18,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # Stage 3: Final image
 FROM debian:bullseye-slim
@@ -38,8 +38,9 @@ RUN npm install --production
 COPY --from=node-build /app/.next ./.next
 COPY --from=node-build /app/public ./public
 
-# Copy Python libraries
-COPY --from=python-build /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY . .
