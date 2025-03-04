@@ -1,60 +1,48 @@
-# Stage 1: Build the Next.js app and install dependencies
-FROM node:20-bullseye AS build
+# Stage 1: Build Node.js app
+FROM node:20-bullseye AS node-build
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
 
-# Install system dependencies for zbar (CRUCIAL!)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    libzbar-dev \
-    cmake \
-    git \
-    build-essential \
-    python3 \
-    python3-pip \
-    python3-dev \
-    python3-opencv
-
-# Install Node.js dependencies
 RUN npm install
 
-# Copy Python requirements
-COPY requirements.txt ./
-
-# Install Python dependencies (AFTER Node.js and zbar system libs)
-RUN python3 -m pip install --no-cache-dir -r requirements.txt
-
-
-# Copy application code
 COPY . .
 
-# Build the Next.js application
 RUN npm run build
 
-# Stage 2: Create the final image (smaller and more efficient)
-FROM node:20-bullseye
+# Stage 2: Build Python dependencies
+FROM python:3.9-slim-buster AS python-build
 
 WORKDIR /app
 
-# Copy the built Next.js app
-COPY --from=build /app/.next ./.next
-COPY --from=build /app/.next/public ./public
-COPY --from=build /app/package*.json ./
-#COPY --from=build /app/public ./public
-COPY --from=build /app/node_modules ./node_modules
+COPY requirements.txt .
 
-COPY --from=build /usr/lib/python3/dist-packages /usr/lib/python3/dist-packages
+RUN pip install --no-cache-dir -r requirements.txt
 
+# Stage 3: Final image
+FROM debian:bullseye-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y nodejs npm python3 python3-pip libzbar0
+
+# Install production node modules.
+WORKDIR /app
+COPY --from=node-build /app/package*.json ./
+RUN npm install --production
+
+# Copy built Next.js app
+COPY --from=node-build /app/.next ./.next
+COPY --from=node-build /app/public ./public
+
+# Copy Python libraries
+COPY --from=python-build /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
+
+# Copy application files
 COPY . .
-# Copy zbar libraries from the build stage
-#COPY --from=build /usr/lib/libzbar* /usr/lib/
-#COPY --from=build /usr/bin/zbar* /usr/bin/
 
-# Expose the port
+# Expose port
 EXPOSE 3000
 
-# Start the application
+# Start application
 CMD ["npm", "start"]
