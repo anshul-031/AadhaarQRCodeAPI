@@ -13,7 +13,7 @@ const nextConfig = {
           patterns: [
             {
               from: "public/scripts",
-              to: ".next/static/chunks/scripts",
+              to: "server/app/public/scripts",
             },
           ],
         })
