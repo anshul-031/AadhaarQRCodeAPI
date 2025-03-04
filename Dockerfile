@@ -15,7 +15,7 @@ RUN apt-get update && \
     build-essential \
     python3 \
     python3-pip \
-    python3-dev
+    python3-dev \
     python3-opencv
 
 # Install Node.js dependencies
