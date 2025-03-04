@@ -52,14 +52,13 @@ export async function POST(request: NextRequest) {
     const options: Options = {
       mode: 'text' as const,
       pythonPath: 'python3',
-      scriptPath: path.join(process.cwd(), 'public/scripts'),
       args: [tempFilePath]
     };
 
     // Execute Python script
     try {
       console.log('Executing Python script...');
-      const results = await PythonShell.run('parse_aadhaar.py', options);
+      const results = await PythonShell.run('public/scripts/parse_aadhaar.py', options);
       console.log('Python script executed successfully.');
       const response: PythonResponse = JSON.parse(results[0]);
 
