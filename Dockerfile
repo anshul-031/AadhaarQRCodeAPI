@@ -47,8 +47,9 @@ COPY --from=build /app/package*.json ./
 #COPY --from=build /app/public ./public
 COPY --from=build /app/node_modules ./node_modules
 
-COPY --from=build /app/lib ./lib
+COPY --from=build /app/lib ./lib/
 
+COPY . .
 # Copy zbar libraries from the build stage
 #COPY --from=build /usr/lib/libzbar* /usr/lib/
 #COPY --from=build /usr/bin/zbar* /usr/bin/
