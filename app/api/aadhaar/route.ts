@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     // Set up Python shell options
     const options: Options = {
       mode: 'text' as const,
-      pythonPath: 'python',
+      pythonPath: 'python3',
       scriptPath: path.join(process.cwd(), 'scripts'),
       args: [tempFilePath]
     };
