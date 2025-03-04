@@ -9,7 +9,7 @@ COPY package*.json ./
 # Install system dependencies for zbar (CRUCIAL!)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    zbar-dev \
+    libzbar-dev \
     cmake \
     git \
     build-essential \
