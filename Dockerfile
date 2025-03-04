@@ -16,6 +16,7 @@ RUN apt-get update && \
     python3 \
     python3-pip \
     python3-dev
+    python3-opencv
 
 # Install Node.js dependencies
 RUN npm install
@@ -26,7 +27,7 @@ COPY requirements.txt ./
 # Install Python dependencies (AFTER Node.js and zbar system libs)
 RUN python3 -m pip install -r requirements.txt
 
-RUN pip install opencv-python
+RUN pip3 install opencv-python
 
 # Copy application code
 COPY . .
