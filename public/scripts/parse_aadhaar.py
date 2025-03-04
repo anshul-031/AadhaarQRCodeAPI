@@ -1,29 +1,7 @@
 import sys
 import json
 import base64
-
-try:
-    import cv2
-    print("OpenCV (cv2) is already installed and imported.")
-except ImportError:
-    print("OpenCV (cv2) is not installed. Attempting installation...")
-    try:
-        import subprocess
-        import sys
-
-        def install(package):
-            subprocess.check_call([sys.executable, "-m", "pip3", "install", package])
-
-        install("opencv-python")
-        import cv2 # Try importing again after installation.
-        print("OpenCV (cv2) has been successfully installed and imported.")
-
-    except subprocess.CalledProcessError as e:
-        print(f"Installation of OpenCV failed: {e}")
-    except ImportError:
-        print("Installation seemed successful, but import still failed.")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+import cv2
 
 
 
