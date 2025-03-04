@@ -13,7 +13,7 @@ const nextConfig = {
           patterns: [
             {
               from: "public/scripts",
-              to: "server/app/public/scripts",
+              to: "public/scripts",
             },
           ],
         })
