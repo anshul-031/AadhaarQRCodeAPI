@@ -23,8 +23,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Stage 3: Final image
 FROM debian:bullseye-slim
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y nodejs npm python3 python3-pip libzbar0
+# Install runtime dependencies (including Node.js 20)
+RUN apt-get update && apt-get install -y curl gnupg
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+RUN apt-get install -y nodejs npm python3 python3-pip libzbar0
 
 # Install production node modules.
 WORKDIR /app
