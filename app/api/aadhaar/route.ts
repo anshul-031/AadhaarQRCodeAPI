@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     const options: Options = {
       mode: 'text' as const,
       pythonPath: 'python3',
-      scriptPath: path.join(process.cwd(), 'scripts'),
+      scriptPath: path.join(process.cwd(), './../scripts'),
       args: [tempFilePath]
     };
 
