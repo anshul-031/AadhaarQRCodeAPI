@@ -8,6 +8,11 @@ from pyzbar.pyzbar import decode
 from PIL import Image
 import numpy as np
 import io
+import logging
+
+# Configure logging
+logging.basicConfig(filename='aadhaar_parser.log', level=logging.DEBUG, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 def decode_image(image_data):
     """Convert base64 image data to OpenCV format"""
@@ -171,7 +176,7 @@ def parse_xml_qr_data_QPD(xml_data):
             else:
                 photo_base64 = None
         except Exception as e:
-            print(f"Error processing image: {e}")
+            logging.debug(f"Error processing image: {e}")
             photo_base64 = None
 
         return {
@@ -212,34 +217,103 @@ def parse_aadhaar_qr_data(decoded_text, photo_data=None):
     """Parses decompressed Aadhaar Secure QR data"""
     try:
         fields = decoded_text.split("ÿ")
-        
+        uid, name, issued_date, issued_time, gender, yob, dob, mobile_number, email, co, house_no, vtc, street, dist, state, pc = [""] * 16  # Initialize variables with default values
+
+        try:
+            uid = "xxxxxxxx" + fields[2][:4]  # last 4 digit Masked Aadhaar number
+        except IndexError:
+            logging.debug("Error extracting uid")
+        try:
+            name = fields[3]
+        except IndexError:
+            logging.debug("Error extracting name")
+        try:
+            issued_date = fields[2][10:12]+"/"+fields[2][8:10]+"/"+fields[2][4:8]
+        except IndexError:
+            logging.debug("Error extracting issued_date")
+        try:
+            issued_time = fields[2][12:14]+":"+fields[2][14:16]+":"+fields[2][16:18]
+        except IndexError:
+            logging.debug("Error extracting issued_time")
+        try:
+            gender = fields[5]
+        except IndexError:
+            logging.debug("Error extracting gender")
+        try:
+            yob = fields[4].split("-")[2]  # Extract year from DOB
+        except IndexError:
+            logging.debug("Error extracting yob")
+        try:
+            dob = fields[4]
+        except IndexError:
+            logging.debug("Error extracting dob")
+        try:
+            mobile_number = fields[17]
+        except IndexError:
+            logging.debug("Error extracting mobile_number")
+        try:
+            email = fields[46]
+        except IndexError:
+            logging.debug("Error extracting email")
+        try:
+            co = fields[6]
+        except IndexError:
+            logging.debug("Error extracting co")
+        try:
+            house_no = fields[8]
+        except IndexError:
+            logging.debug("Error extracting house_no")
+        try:
+            vtc = fields[7]
+        except IndexError:
+            logging.debug("Error extracting vtc")
+        try:
+            street = fields[10]
+        except IndexError:
+            logging.debug("Error extracting street")
+        try:
+            dist = fields[12]
+        except IndexError:
+            logging.debug("Error extracting dist")
+        try:
+            state = fields[13]
+        except IndexError:
+            logging.debug("Error extracting state")
+        try:
+            pc =  fields[11]
+        except IndexError:
+            logging.debug("Error extracting pc")
+
+        address = co+ ", " +house_no+ ", "+street+ ", "+pc+ ", "+dist+ ", "+state
         return {
             "success": True,
             "data": {
-                "uid": "xxxxxxxx"+fields[2][:4],  # last 4 digit Masked Aadhaar number
-                "name": fields[3],
-                "issued_date": fields[2][10:12]+"/"+fields[2][8:10]+"/"+fields[2][4:8],
-                "issued_time": fields[2][12:14]+":"+fields[2][14:16]+":"+fields[2][16:18],
-                "gender": fields[5],
-                "yob": fields[4].split("-")[2],  # Extract year from DOB
-                "dob": fields[4],
-                "mobile_number": fields[17],
-                "email": fields[46],
-                "co": fields[6],
-                "house_no": fields[8],
-                "vtc": fields[7],
+                "uid": uid,  # last 4 digit Masked Aadhaar number
+                "name": name,
+                "issued_date": issued_date,
+                "issued_time": issued_time,
+                "gender": gender,
+                "yob": yob,  # Extract year from DOB
+                "dob": dob,
+                "mobile_number": mobile_number,
+                "email": email,
+                "co": co,
+                "house_no": house_no,
+                "vtc": vtc,
                 "po": "",  # Not available in secure QR
-                "street": fields[10],
-                "dist": fields[12],
-                "state": fields[13],
-                "pc": fields[11],
-                "address": fields[6]+ ", " +fields[8]+ ", "+fields[10]+ ", "+fields[11]+ ", "+fields[12]+ ", "+fields[13], 
+                "street": street,
+                "dist": dist,
+                "state": state,
+                "pc": pc,
+                "address": address,
                 "photo": photo_data, 
                 "raw_data": fields
             }
         }
-    except IndexError as e:
-        raise ValueError(f"Failed to parse Aadhaar data: {str(e)}")
+    except Exception as e:
+        error_message = f"Failed to parse Aadhaar data: {str(e)} - Fields: {fields}"
+        logging.debug(json.dumps({"success": False, "error": error_message}))
+        return {"success": False, "error": error_message}
 
 def process_qr_data(input_data):
     """Main function to process QR data from image or text"""
