@@ -51,14 +51,15 @@ export async function POST(request: NextRequest) {
     // Set up Python shell options
     const options: Options = {
       mode: 'text' as const,
-      pythonPath: 'python',
-      scriptPath: path.join(process.cwd(), 'scripts'),
+      pythonPath: 'python3',
       args: [tempFilePath]
     };
 
     // Execute Python script
     try {
-      const results = await PythonShell.run('parse_aadhaar.py', options);
+      console.log('Executing Python script...');
+      const results = await PythonShell.run('scripts/parse_aadhaar.py', options);
+      console.log('Python script executed successfully.');
       const response: PythonResponse = JSON.parse(results[0]);
 
       if (!response.success) {
@@ -76,6 +77,7 @@ export async function POST(request: NextRequest) {
 
     } catch (pythonError) {
       console.error('Python script error:', pythonError);
+      console.log('Python script error:', pythonError);
       return NextResponse.json(
         { error: 'Failed to process QR data' },
         { status: 500 }
@@ -84,6 +86,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('API error:', error);
+    console.log('API error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
