@@ -2,9 +2,6 @@ import sys
 import json
 import base64
 import cv2
-
-
-
 import gzip
 import xml.etree.ElementTree as ET
 from pyzbar.pyzbar import decode
