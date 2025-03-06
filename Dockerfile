@@ -36,7 +36,7 @@ RUN npm install --production
 
 # Copy built Next.js app
 COPY --from=node-build /app/.next ./.next
-COPY --from=node-build /app/public ./public
+COPY --from=node-build /app/scripts ./scripts
 
 # Install Python dependencies
 COPY requirements.txt .

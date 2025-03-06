@@ -12,8 +12,8 @@ const nextConfig = {
         new CopyPlugin({
           patterns: [
             {
-              from: "public/scripts",
-              to: "public/scripts",
+              from: "scripts",
+              to: "scripts",
             },
           ],
         })
