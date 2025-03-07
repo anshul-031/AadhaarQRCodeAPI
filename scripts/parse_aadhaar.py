@@ -9,9 +9,10 @@ from PIL import Image
 import numpy as np
 import io
 import logging
+import re
 
 # Configure logging
-logging.basicConfig(filename='aadhaar_parser.log', level=logging.DEBUG, 
+logging.basicConfig(filename='aadhaar_parser.log', level=logging.DEBUG,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 def decode_image(image_data):
@@ -20,19 +21,19 @@ def decode_image(image_data):
         # Remove data URL prefix if present
         if ',' in image_data:
             image_data = image_data.split(',')[1]
-            
+
         # Decode base64 to bytes
         image_bytes = base64.b64decode(image_data)
-        
+
         # Convert to numpy array
         nparr = np.frombuffer(image_bytes, np.uint8)
-        
+
         # Decode image
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         if img is None:
             raise ValueError("Failed to decode image")
-            
+
         return img
     except Exception as e:
         raise ValueError(f"Failed to process image: {str(e)}")
@@ -42,23 +43,23 @@ def extract_qr_data(img):
     try:
         # Convert to grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
+
         # Try different thresholding methods
         methods = [
             lambda x: x,  # Original
             lambda x: cv2.threshold(x, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],  # Otsu's method
             lambda x: cv2.adaptiveThreshold(x, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)  # Adaptive
         ]
-        
+
         for method in methods:
             processed = method(gray)
             qr_codes = decode(processed)
-            
+
             if qr_codes:
                 # Get first QR code data
                 qr_data = qr_codes[0].data.decode("utf-8")
                 return qr_data
-                
+
         raise ValueError("No QR code detected in the image")
     except Exception as e:
         raise ValueError(f"Failed to extract QR data: {str(e)}")
@@ -71,7 +72,7 @@ def find_jp2_markers(byte_data):
         b'\xFF\xD8\xFF',                       # JPEG signature
         b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A'   # PNG signature
     ]
-    
+
     for marker in markers:
         pos = byte_data.find(marker)
         if pos != -1:
@@ -104,13 +105,13 @@ def extract_aadhaar_photo(decompressed_data):
 
         # Extract image data
         image_bytes = decompressed_data[start_pos:end_pos]
-        
+
         # Try to decode and re-encode as JPEG for consistent frontend display
         try:
             # Convert to numpy array
             nparr = np.frombuffer(image_bytes, np.uint8)
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
+
             if img is not None:
                 # Encode as JPEG
                 _, buffer = cv2.imencode('.jpg', img)
@@ -119,7 +120,7 @@ def extract_aadhaar_photo(decompressed_data):
         except:
             # If conversion fails, return original bytes as base64
             return base64.b64encode(image_bytes).decode('utf-8')
-            
+
         return None
     except Exception:
         return None
@@ -148,7 +149,7 @@ def parse_xml_qr_data_XML(xml_data):
                 "dist": root.get("dist", ""),
                 "state": root.get("state", ""),
                 "pc": root.get("pc", ""),
-                "photo": None, 
+                "photo": None,
                 "raw_data": xml_data
             }
         }
@@ -160,7 +161,7 @@ def parse_xml_qr_data_QPD(xml_data):
     try:
         root = ET.fromstring(xml_data)
         photo_base64 = root.get('i','')
-        
+
         try:
             # Decode base64 image data
             image_bytes = base64.b64decode(photo_base64)
@@ -168,7 +169,7 @@ def parse_xml_qr_data_QPD(xml_data):
             nparr = np.frombuffer(image_bytes, np.uint8)
             # Decode image
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
+
             if img is not None:
                 # Encode as JPEG
                 _, buffer = cv2.imencode('.jpg', img)
@@ -218,69 +219,75 @@ def parse_aadhaar_qr_data(decoded_text, photo_data=None):
     try:
         fields = decoded_text.split("ÿ")
         uid, name, issued_date, issued_time, gender, yob, dob, mobile_number, email, co, house_no, vtc, street, dist, state, pc = [""] * 16  # Initialize variables with default values
+        date_field = None
+        date_field_index = None
+
+        # Iterate through fields to find a date
+        for i, field in enumerate(fields):
+            if re.match(r'\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}|\d{2}-\d{2}-\d{4}', field):
+                date_field = field
+                date_field_index = i
+                logging.debug(f"Found date field: {date_field} at index {date_field_index}")
+                break  # Stop after the first date is found
 
         try:
-            uid = "xxxxxxxx" + fields[2][:4]  # last 4 digit Masked Aadhaar number
+            uid = "xxxxxxxx" + fields[date_field_index - 4 + 2][:4]  # last 4 digit Masked Aadhaar number
         except IndexError:
             logging.debug("Error extracting uid")
         try:
-            name = fields[3]
+            name = fields[date_field_index - 4 + 3]
         except IndexError:
             logging.debug("Error extracting name")
         try:
-            issued_date = fields[2][10:12]+"/"+fields[2][8:10]+"/"+fields[2][4:8]
+            issued_date = fields[date_field_index - 4 + 2][10:12]+"/"+fields[date_field_index - 4 + 2][8:10]+"/"+fields[date_field_index - 4 + 2][4:8]
         except IndexError:
             logging.debug("Error extracting issued_date")
         try:
-            issued_time = fields[2][12:14]+":"+fields[2][14:16]+":"+fields[2][16:18]
+            issued_time = fields[date_field_index - 4 + 2][12:14]+":"+fields[date_field_index - 4 + 2][14:16]+":"+fields[date_field_index - 4 + 2][16:18]
         except IndexError:
             logging.debug("Error extracting issued_time")
         try:
-            gender = fields[5]
+            gender = fields[date_field_index - 4 + 5]
         except IndexError:
             logging.debug("Error extracting gender")
         try:
-            yob = fields[4].split("-")[2]  # Extract year from DOB
-        except IndexError:
-            logging.debug("Error extracting yob")
-        try:
-            dob = fields[4]
+            dob = fields[date_field_index - 4 + 4]
         except IndexError:
             logging.debug("Error extracting dob")
         try:
-            mobile_number = fields[17]
+            mobile_number = fields[date_field_index - 4 + 17]
         except IndexError:
             logging.debug("Error extracting mobile_number")
         try:
-            email = fields[46]
+            email = fields[date_field_index - 4 + 46]
         except IndexError:
             logging.debug("Error extracting email")
         try:
-            co = fields[6]
+            co = fields[date_field_index - 4 + 6]
         except IndexError:
             logging.debug("Error extracting co")
         try:
-            house_no = fields[8]
+            house_no = fields[date_field_index - 4 + 8]
         except IndexError:
             logging.debug("Error extracting house_no")
         try:
-            vtc = fields[7]
+            vtc = fields[date_field_index - 4 + 7]
         except IndexError:
             logging.debug("Error extracting vtc")
         try:
-            street = fields[10]
+            street = fields[date_field_index - 4 + 10]
         except IndexError:
             logging.debug("Error extracting street")
         try:
-            dist = fields[12]
+            dist = fields[date_field_index - 4 + 12]
         except IndexError:
             logging.debug("Error extracting dist")
         try:
-            state = fields[13]
+            state = fields[date_field_index - 4 + 13]
         except IndexError:
             logging.debug("Error extracting state")
         try:
-            pc =  fields[11]
+            pc =  fields[date_field_index - 4 + 11]
         except IndexError:
             logging.debug("Error extracting pc")
 
@@ -306,8 +313,9 @@ def parse_aadhaar_qr_data(decoded_text, photo_data=None):
                 "state": state,
                 "pc": pc,
                 "address": address,
-                "photo": photo_data, 
-                "raw_data": fields
+                "photo": photo_data,
+                "raw_data": fields,
+                "date_field_index": date_field_index
             }
         }
     except Exception as e:
@@ -330,28 +338,33 @@ def process_qr_data(input_data):
         # Check if it's XML format
         if qr_data.startswith("<?xml") or qr_data.startswith("</?xml"):
             return parse_xml_qr_data_XML(qr_data)
-            
+
         # Check if it's QPD XML format
         if qr_data.startswith("<QPD"):
             return parse_xml_qr_data_QPD(qr_data)
-        
+
         # # Check if it's QPD XML format
         # if qr_data.startswith("</?xml"):
         #     return parse_xml_qr_data_XMLA(qr_data)
-            
+
         # Process as secure QR
         byte_array = convert_base10_to_bytes(qr_data)
         decompressed_data = decompress_qr_data(byte_array)
-        
+
         # Try to extract photo
         photo_base64 = extract_aadhaar_photo(decompressed_data)
-        
+
         # Parse text data
-        return parse_aadhaar_qr_data(
+        aadhaar_data = parse_aadhaar_qr_data(
             decompressed_data.decode('ISO-8859-1'),
             photo_base64
         )
-        
+
+        # Log aadhaar data for debugging
+        logging.debug(f"Aadhaar data: {aadhaar_data}")
+
+        return aadhaar_data
+
     except Exception as e:
         return {
             "success": False,
