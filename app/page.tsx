@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, QrCode, Upload, Camera } from "lucide-react";
+import { Loader2, QrCode, Upload, Camera, Search } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Webcam from 'react-webcam';
 
@@ -393,6 +394,51 @@ export default function Home() {
                   </div>
                 )}
               </div>
+
+              {/* Background Check Results */}
+              <Card className="mt-8 p-6 space-y-6">
+                <div className="flex items-center space-x-2">
+                  <Search className="h-5 w-5 text-primary" />
+                  <h2 className="text-xl font-semibold">Background Check Results</h2>
+                </div>
+
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Court/Authority</TableHead>
+                        <TableHead>Since</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {[
+                        { court: "All High Courts", status: "No Case found", year: "2000" },
+                        { court: "Civil Courts - Junior Civil Court, Senior Civil Court, District Court", status: "No Case found", year: "2000" },
+                        { court: "Criminal Courts - Magistrate courts and Session courts", status: "No Case found", year: "2000" },
+                        { court: "Supreme Court", status: "No Case found", year: "1947" },
+                        { court: "Consumer Courts", status: "No Case found", year: "2000" },
+                        { court: "CEGAT/CESTAT", status: "No Case found", year: "2000" },
+                        { court: "Debt Recovery Tribunal(DRT)", status: "No Case found", year: "2000" },
+                        { court: "Debt Recovery Appellate Tribunal(DRAT)", status: "No Case found", year: "2000" },
+                        { court: "Income Tax Appellate Tribunal (ITAT)", status: "No Case found", year: "2000" },
+                        { court: "National Company Law Tribunal(NCLT)", status: "No Case found", year: "2000" },
+                        { court: "Securities Apellate Tribunal(SAT)", status: "No Case found", year: "2000" },
+                        { court: "National Green Tribunal(NGT)", status: "No Case found", year: "2000" },
+                        { court: "NCLAT", status: "No Case found", year: "2000" },
+                        { court: "Appellate Tribunal for Foreign Exchange - APTE", status: "No Case found", year: "2000" },
+                        { court: "Others", status: "No Case found", year: "2000" }
+                      ].map((record, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{record.court}</TableCell>
+                          <TableCell>{record.year}</TableCell>
+                          <TableCell>{record.status}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </Card>
             </div>
           )}
         </Card>
