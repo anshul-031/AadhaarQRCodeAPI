@@ -11,9 +11,13 @@ import io
 import logging
 import re
 
-# Configure logging
-logging.basicConfig(filename='aadhaar_parser.log', level=logging.DEBUG,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging to write to stdout
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
 
 def decode_image(image_data):
     """Convert base64 image data to OpenCV format"""
@@ -326,46 +330,64 @@ def parse_aadhaar_qr_data(decoded_text, photo_data=None):
 def process_qr_data(input_data):
     """Main function to process QR data from image or text"""
     try:
+        logger.info("Starting QR data processing")
+        
         # Check if input is an image (base64)
         if input_data.startswith(('data:image', 'iVBOR')):
+            logger.info("Input detected as base64 image")
             # Decode image and extract QR data
             img = decode_image(input_data)
+            logger.debug("Image decoded successfully")
             qr_data = extract_qr_data(img)
+            logger.info("QR code extracted from image")
         else:
-            # Use input directly as QR data
+            logger.info("Input detected as raw QR data")
             qr_data = input_data
+
+        logger.debug(f"QR Data format check - Starts with: {qr_data[:10]}...")
 
         # Check if it's XML format
         if qr_data.startswith("<?xml") or qr_data.startswith("</?xml"):
+            logger.info("Processing XML format QR data")
             return parse_xml_qr_data_XML(qr_data)
 
         # Check if it's QPD XML format
         if qr_data.startswith("<QPD"):
+            logger.info("Processing QPD XML format QR data")
             return parse_xml_qr_data_QPD(qr_data)
 
-        # # Check if it's QPD XML format
-        # if qr_data.startswith("</?xml"):
-        #     return parse_xml_qr_data_XMLA(qr_data)
-
         # Process as secure QR
+        logger.info("Processing secure QR format")
         byte_array = convert_base10_to_bytes(qr_data)
+        logger.debug("Converted base10 to bytes")
+        
         decompressed_data = decompress_qr_data(byte_array)
+        logger.debug("Data decompressed successfully")
 
         # Try to extract photo
         photo_base64 = extract_aadhaar_photo(decompressed_data)
+        if photo_base64:
+            logger.info("Photo extracted successfully")
+        else:
+            logger.info("No photo found in QR data")
 
         # Parse text data
+        logger.info("Parsing Aadhaar text data")
         aadhaar_data = parse_aadhaar_qr_data(
             decompressed_data.decode('ISO-8859-1'),
             photo_base64
         )
 
-        # Log aadhaar data for debugging
-        logging.debug(f"Aadhaar data: {aadhaar_data}")
+        # Log result status
+        if aadhaar_data["success"]:
+            logger.info("QR data processed successfully")
+        else:
+            logger.error(f"QR data processing failed: {aadhaar_data.get('error', 'Unknown error')}")
 
         return aadhaar_data
 
     except Exception as e:
+        logger.error(f"Error processing QR data: {str(e)}", exc_info=True)
         return {
             "success": False,
             "error": str(e)
@@ -373,23 +395,44 @@ def process_qr_data(input_data):
 
 def main():
     """Entry point for command line execution"""
+    logger.info("Starting Aadhaar QR Code Parser")
+    
     if len(sys.argv) > 1:
         input_file = sys.argv[1]
+        logger.info(f"Processing input file: {input_file}")
+        
         try:
             with open(input_file, 'r') as f:
                 input_data = f.read().strip()
+                logger.debug(f"Read {len(input_data)} characters from input file")
+            
+            logger.info("Processing QR data from input file")
             result = process_qr_data(input_data)
+            
+            if result["success"]:
+                logger.info("Successfully processed QR data")
+            else:
+                logger.error(f"Failed to process QR data: {result.get('error', 'Unknown error')}")
+            
+            # Output final result as JSON
             print(json.dumps(result))
+            
         except Exception as e:
+            error_msg = f"Failed to read input file: {str(e)}"
+            logger.error(error_msg, exc_info=True)
             print(json.dumps({
                 "success": False,
-                "error": f"Failed to read input file: {str(e)}"
+                "error": error_msg
             }))
     else:
+        error_msg = "No input file provided"
+        logger.error(error_msg)
         print(json.dumps({
             "success": False,
-            "error": "No input file provided"
+            "error": error_msg
         }))
+    
+    logger.info("Aadhaar QR Code Parser finished")
 
 if __name__ == "__main__":
     main()

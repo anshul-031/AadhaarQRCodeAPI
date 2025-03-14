@@ -58,9 +58,50 @@ export async function POST(request: NextRequest) {
     // Execute Python script
     try {
       console.log('Executing Python script...');
-      const results = await PythonShell.run('scripts/parse_aadhaar.py', options);
+      
+      // Create a new PythonShell instance to capture logs
+      const pyshell = new PythonShell('scripts/parse_aadhaar.py', options);
+      
+      // Store all messages
+      const messages: string[] = [];
+      
+      // Run the script and get results
+      const results = await new Promise<string[]>((resolve, reject) => {
+        // Capture stdout
+        pyshell.on('message', function (message: string) {
+          console.log('Python stdout:', message);
+          messages.push(message);
+        });
+        
+        // Capture stderr
+        pyshell.on('stderr', function (stderr: string) {
+          console.log('Python stderr:', stderr);
+        });
+
+        pyshell.end((err: Error | null) => {
+          if (err) reject(err);
+          resolve(messages);
+        });
+      });
+      
       console.log('Python script executed successfully.');
-      const response: PythonResponse = JSON.parse(results[0]);
+      
+      // The last message that starts with '{' and ends with '}' should be our JSON result
+      const jsonLine = results.find(line =>
+        line.trim().startsWith('{') &&
+        line.trim().endsWith('}') &&
+        line.includes('"success":')
+      );
+
+      if (!jsonLine) {
+        console.error('Failed to find valid JSON in Python output. Full output:', results);
+        return NextResponse.json(
+          { error: 'Failed to parse Python script output' },
+          { status: 500 }
+        );
+      }
+
+      const response: PythonResponse = JSON.parse(jsonLine);
 
       if (!response.success) {
         return NextResponse.json(
