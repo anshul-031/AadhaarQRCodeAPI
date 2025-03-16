@@ -47,22 +47,68 @@ def extract_qr_data(img):
     try:
         # Convert to grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        # Try different thresholding methods
-        methods = [
+        
+        # Image enhancement methods
+        enhancements = [
             lambda x: x,  # Original
-            lambda x: cv2.threshold(x, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],  # Otsu's method
-            lambda x: cv2.adaptiveThreshold(x, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)  # Adaptive
+            lambda x: cv2.GaussianBlur(x, (3, 3), 0),  # Slight blur for noise reduction
+            lambda x: cv2.medianBlur(x, 3),  # Median blur for noise reduction
+            lambda x: cv2.bilateralFilter(x, 9, 75, 75),  # Edge-preserving smoothing
+            lambda x: cv2.fastNlMeansDenoising(x),  # Non-local means denoising
         ]
 
-        for method in methods:
-            processed = method(gray)
-            qr_codes = decode(processed)
+        # Thresholding methods
+        thresholds = [
+            lambda x: x,  # Original
+            lambda x: cv2.threshold(x, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],  # Otsu's method
+            lambda x: cv2.adaptiveThreshold(x, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2),  # Adaptive Gaussian
+            lambda x: cv2.adaptiveThreshold(x, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 2),  # Adaptive Mean
+            lambda x: cv2.threshold(x, 127, 255, cv2.THRESH_BINARY)[1],  # Simple binary
+        ]
 
-            if qr_codes:
-                # Get first QR code data
-                qr_data = qr_codes[0].data.decode("utf-8")
-                return qr_data
+        # Try different scales
+        scales = [1.0, 1.5, 2.0, 0.75, 0.5]
+        
+        # Try different rotations
+        rotations = [0, 90, 180, 270]
+
+        # Process image with various combinations
+        for scale in scales:
+            # Resize image
+            width = int(img.shape[1] * scale)
+            height = int(img.shape[0] * scale)
+            scaled = cv2.resize(gray, (width, height))
+
+            for rotation in rotations:
+                # Rotate image
+                if rotation != 0:
+                    matrix = cv2.getRotationMatrix2D((width/2, height/2), rotation, 1.0)
+                    rotated = cv2.warpAffine(scaled, matrix, (width, height))
+                else:
+                    rotated = scaled
+
+                for enhance in enhancements:
+                    enhanced = enhance(rotated)
+                    
+                    for threshold in thresholds:
+                        try:
+                            processed = threshold(enhanced)
+                            
+                            # Additional contrast enhancement
+                            processed = cv2.convertScaleAbs(processed, alpha=1.5, beta=0)
+                            
+                            # Sharpen the image
+                            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+                            processed = cv2.filter2D(processed, -1, kernel)
+                            
+                            qr_codes = decode(processed)
+                            
+                            if qr_codes:
+                                # Get first QR code data
+                                qr_data = qr_codes[0].data.decode("utf-8")
+                                return qr_data
+                        except Exception:
+                            continue
 
         raise ValueError("No QR code detected in the image")
     except Exception as e:
