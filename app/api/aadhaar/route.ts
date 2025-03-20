@@ -3,6 +3,7 @@ import { PythonShell, Options } from 'python-shell';
 import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
+import { logFailedQr, logSuccessfulQr } from '@/lib/db';
 
 interface AadhaarQRData {
   uid: string;
@@ -104,11 +105,21 @@ export async function POST(request: NextRequest) {
       const response: PythonResponse = JSON.parse(jsonLine);
 
       if (!response.success) {
+        const errorMessage = response.error || 'Failed to parse QR data';
+        await logFailedQr({
+          qr_details: qrData,
+          error_message: errorMessage,
+          timestamp: new Date(),
+        });
         return NextResponse.json(
-          { error: response.error || 'Failed to parse QR data' },
+          { error: errorMessage },
           { status: 400 }
         );
       }
+
+      await logSuccessfulQr({
+        timestamp: new Date(),
+      });
 
       return NextResponse.json({
         success: true,
@@ -119,6 +130,11 @@ export async function POST(request: NextRequest) {
     } catch (pythonError) {
       console.error('Python script error:', pythonError);
       console.log('Python script error:', pythonError);
+      await logFailedQr({
+        qr_details: qrData,
+        error_message: 'Python script error',
+        timestamp: new Date(),
+      });
       return NextResponse.json(
         { error: 'Failed to process QR data' },
         { status: 500 }

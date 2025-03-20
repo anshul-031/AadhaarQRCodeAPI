@@ -27,7 +27,7 @@ FROM debian:bullseye-slim
 RUN apt-get update && apt-get install -y curl gnupg
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 #Corrected line.
-RUN apt-get install -y nodejs python3 python3-pip libzbar0
+RUN apt-get install -y nodejs python3 python3-pip libzbar0 postgresql-client
 
 # Install production node modules.
 WORKDIR /app
