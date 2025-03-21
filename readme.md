@@ -84,6 +84,16 @@ The application includes a desktop scanner service that enables integration with
 
 ## License
 
+### Desktop App Build Instructions
+
+To build the desktop app for Windows and macOS, follow these steps:
+
+1.  Navigate to the `desktop-scanner` directory: `cd desktop-scanner`
+2.  Install the dependencies: `npm install`
+3.  Run the build command: `npm run dist`
+
+The executable files will be created in the `desktop-scanner/release` directory.
+
 This project is licensed under the ISC License.
 
 This project is a Next.js application that parses Aadhaar QR code data using a Python script.
