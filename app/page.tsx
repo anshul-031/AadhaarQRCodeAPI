@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, QrCode, Upload, Camera, Search } from "lucide-react";
+import { Loader2, QrCode, Upload, Camera, Search, ScanLine } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Webcam from 'react-webcam';
@@ -21,6 +21,11 @@ interface AadhaarData {
   uid?: string;
 }
 
+interface ScannerDevice {
+  id: string;
+  name: string;
+}
+
 export default function Home() {
   const [qrData, setQrData] = useState('');
   const [loading, setLoading] = useState(false);
@@ -29,8 +34,141 @@ export default function Home() {
   const [showCamera, setShowCamera] = useState(false);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string | undefined>(undefined);
+  const [scannerList, setScannerList] = useState<ScannerDevice[]>([]);
+  const [selectedScanner, setSelectedScanner] = useState<string>('');
+  const [wsError, setWsError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const webcamRef = useRef<Webcam>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  // Initialize WebSocket connection
+  useEffect(() => {
+    const connectWebSocket = () => {
+      console.log('Connecting to scanner service...');
+      const ws = new WebSocket('ws://localhost:3500');
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('Connected to scanner service');
+        setWsError(null);
+        // Request scanner list on connection
+        ws.send(JSON.stringify({ type: 'get-scanners' }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log('Received message:', message);
+
+          switch (message.type) {
+            case 'scanners-list':
+              setScannerList(message.data);
+              break;
+
+            case 'scan-complete':
+              if (message.data.success && message.data.path) {
+                // Read the scanned image file and process it
+                fetch(`file://${message.data.path}`)
+                  .then(response => response.blob())
+                  .then(blob => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                      const base64data = reader.result as string;
+                      handleScannedImage(base64data);
+                    };
+                    reader.readAsDataURL(blob);
+                  })
+                  .catch(error => {
+                    console.error('Error reading scanned file:', error);
+                    setError('Failed to process scanned image');
+                  });
+              }
+              break;
+
+            case 'scan-error':
+              setError(message.error || 'Scanner error occurred');
+              break;
+
+            case 'error':
+              setError(message.error || 'An error occurred');
+              break;
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setWsError('Failed to connect to scanner service');
+      };
+
+      ws.onclose = () => {
+        console.log('Scanner service connection closed');
+        setWsError('Connection to scanner service lost');
+        // Try to reconnect after 5 seconds
+        setTimeout(connectWebSocket, 5000);
+      };
+    };
+
+    connectWebSocket();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
+  // Handle scanned image processing
+  const handleScannedImage = async (base64Data: string) => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const response = await fetch('/api/aadhaar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ qrData: base64Data }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to process scanned image');
+      }
+
+      if (data.success && data.data) {
+        setResult(data.data);
+      } else {
+        throw new Error(data.error || 'Failed to process scanned image');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle scan button click
+  const handleStartScan = () => {
+    if (!wsRef.current || !selectedScanner) {
+      setError('Scanner not connected');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    wsRef.current.send(JSON.stringify({
+      type: 'start-scan',
+      deviceId: selectedScanner
+    }));
+  };
 
   useEffect(() => {
     // Get available cameras when component mounts
@@ -196,17 +334,83 @@ export default function Home() {
             Aadhaar QR Code Reader
           </h1>
           <p className="mt-2 text-gray-600">
-            Scan QR code using camera, upload an image, or enter data manually
+            Scan QR code using camera, scanner, upload an image, or enter data manually
           </p>
         </div>
 
         <Card className="p-6 bg-white shadow-lg rounded-lg">
-          <Tabs defaultValue="camera" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-3">
+          <Tabs defaultValue="camera" className="space-y-4" onValueChange={(value) => localStorage.setItem('lastUsedTab', value)}>
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="camera">Camera</TabsTrigger>
+              <TabsTrigger value="scan">Scan</TabsTrigger>
               <TabsTrigger value="upload">Upload</TabsTrigger>
               <TabsTrigger value="manual">Manual</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="scan" className="space-y-4">
+              <div className="flex flex-col space-y-4">
+                <div>
+                  <label className="text-sm text-gray-600 mb-1 block">Select Scanner</label>
+                  <select 
+                    className="w-full p-2 border rounded-md"
+                    value={selectedScanner}
+                    onChange={(e) => setSelectedScanner(e.target.value)}
+                    disabled={loading}
+                  >
+                    <option value="">Choose a scanner...</option>
+                    {scannerList.map((scanner) => (
+                      <option key={scanner.id} value={scanner.id}>
+                        {scanner.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {!selectedScanner && (
+                  <div className="text-sm text-gray-600">
+                    No scanners found. Make sure the Aadhaar Scanner Service is running and your scanner is connected.
+                  </div>
+                )}
+                <div className="flex justify-between space-x-4">
+                  <Button
+                    onClick={() => {
+                      console.log('Refreshing scanner list...');
+                      wsRef.current?.send(JSON.stringify({ type: 'get-scanners' }));
+                    }}
+                    variant="outline"
+                    className="flex-1"
+                    disabled={loading}
+                  >
+                    <ScanLine className="mr-2 h-4 w-4" />
+                    Refresh Scanners
+                  </Button>
+                  <Button
+                    onClick={handleStartScan}
+                    className="flex-1"
+                    disabled={loading || !selectedScanner}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Scanning...
+                      </>
+                    ) : (
+                      <>
+                        <ScanLine className="mr-2 h-4 w-4" />
+                        Start Scan
+                      </>
+                    )}
+                  </Button>
+                </div>
+                {wsError && (
+                  <div className="p-4 bg-red-50 text-red-700 rounded-md text-sm">
+                    {wsError}
+                    <div className="mt-2">
+                      Make sure the Aadhaar Scanner Service is running on your computer.
+                    </div>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
 
             <TabsContent value="camera" className="space-y-4">
               <div className="flex flex-col items-center space-y-4">
