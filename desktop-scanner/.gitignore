@@ -19,3 +19,4 @@ Thumbs.db
 
 # Electron build output
 /release
+dist/

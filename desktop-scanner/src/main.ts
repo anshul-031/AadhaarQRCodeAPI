@@ -1,18 +1,14 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { WebSocketServer, WebSocket } from 'ws';
 import { exec } from 'child_process';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
+import { ScannerDevice, listScanners, constructScanCommand } from './utils';
 
 let mainWindow: BrowserWindow | null = null;
 let wss: WebSocketServer;
 const PORT = 3500;
-
-interface ScannerDevice {
-  id: string;
-  name: string;
-}
 
 // Logger with timestamps
 const logger = {
@@ -26,114 +22,11 @@ const logger = {
   }
 };
 
-// Check if scanning tools are available
-const checkScanningTools = async (): Promise<boolean> => {
-  return new Promise((resolve) => {
-    if (process.platform === 'win32') {
-      exec('powershell "Get-WmiObject -List | Where-Object {$_.Name -eq \'Win32_PnPEntity\'}"', (error) => {
-        if (error) {
-          logger.error('Windows WMI not available:', error);
-          resolve(false);
-          return;
-        }
-        resolve(true);
-      });
-    } else {
-      exec('which scanimage', (error) => {
-        if (error) {
-          logger.error('SANE scanimage not found. Please install SANE:');
-          logger.error('Ubuntu/Debian: sudo apt-get install sane');
-          logger.error('macOS: brew install sane-backends');
-          resolve(false);
-          return;
-        }
-        resolve(true);
-      });
-    }
-  });
-};
-
-// Get list of scanners
-const getScanners = async (): Promise<ScannerDevice[]> => {
-  const toolsAvailable = await checkScanningTools();
-  if (!toolsAvailable) {
-    logger.error('Required scanning tools not available');
-    return [];
-  }
-
-  return new Promise((resolve) => {
-    if (process.platform === 'win32') {
-      // Windows: Use PowerShell to get WIA devices
-      const command = `powershell "Get-WmiObject Win32_PnPEntity | Where-Object{$_.Caption -match 'scanner'} | Select-Object Caption,DeviceID | ConvertTo-Json"`;
-      exec(command, (error, stdout) => {
-        if (error) {
-          logger.error('Error getting Windows scanners:', error);
-          resolve([]);
-          return;
-        }
-        try {
-          const devices = JSON.parse(stdout.trim() || '[]');
-          const scanners = Array.isArray(devices) ? devices : [devices];
-          resolve(scanners.map((device: any) => ({
-            id: device.DeviceID,
-            name: device.Caption
-          })));
-        } catch (e) {
-          logger.error('Error parsing scanner list:', e);
-          resolve([]);
-        }
-      });
-    } else {
-      // macOS/Linux: Use SANE
-      exec('scanimage -L', (error, stdout) => {
-        if (error) {
-          logger.error('Error getting SANE scanners:', error);
-          resolve([{
-            id: 'demo-scanner',
-            name: 'Demo Scanner (No physical scanner found)'
-          }]);
-          return;
-        }
-        try {
-          const output = stdout.trim();
-          if (!output || output.includes('No scanners were identified')) {
-            logger.info('No physical scanners found, using demo scanner');
-            resolve([{
-              id: 'demo-scanner',
-              name: 'Demo Scanner (No physical scanner found)'
-            }]);
-            return;
-          }
-
-          const devices = output
-            .split('\n')
-            .filter((line: string) => line.trim().length > 0)
-            .map((line: string) => {
-              const match = line.match(/'([^']+)'/);
-              return {
-                id: match?.[1] || line,
-                name: line.split('`')[0].trim()
-              };
-            });
-          resolve(devices);
-        } catch (e) {
-          logger.error('Error parsing SANE scanner list:', e);
-          resolve([{
-            id: 'demo-scanner',
-            name: 'Demo Scanner (No physical scanner found)'
-          }]);
-        }
-      });
-    }
-  });
-};
-
 // Create a demo scan image
 const createDemoScan = async (): Promise<string> => {
   const outputPath = path.join(os.tmpdir(), `demo-scan-${Date.now()}.jpg`);
   logger.info('Creating demo scan:', outputPath);
 
-  // Create a simple image with text using system tools
   return new Promise((resolve, reject) => {
     if (process.platform === 'darwin') {
       // On macOS, use sips to create an image
@@ -177,42 +70,25 @@ const performScan = async (deviceId: string): Promise<{ path: string; success: b
   logger.info('Starting scan to:', outputPath);
 
   return new Promise((resolve, reject) => {
-    if (process.platform === 'win32') {
-      // Windows scanning
-      const command = `powershell "
-        try {
-          $deviceManager = New-Object -ComObject WIA.DeviceManager;
-          $device = $deviceManager.DeviceInfos | Where-Object { $_.DeviceID -eq '${deviceId}' } | ForEach-Object { $_.Connect() };
-          $scanner = $device.Items[1];
-          $image = $scanner.Transfer();
-          $image.SaveFile('${outputPath}');
-          exit 0;
-        } catch {
-          Write-Error $_.Exception.Message;
-          exit 1;
-        }
-      "`;
+    const command = constructScanCommand(deviceId, outputPath);
+    logger.info('Executing scan command:', command);
 
-      exec(command, (error) => {
-        if (error) {
-          logger.error('Windows scan error:', error);
-          reject(error);
-          return;
-        }
-        resolve({ path: outputPath, success: true });
-      });
-    } else {
-      // Unix-like systems scanning
-      const command = `scanimage -d "${deviceId}" --format=jpeg --output-file="${outputPath}"`;
-      exec(command, (error) => {
-        if (error) {
-          logger.error('SANE scan error:', error);
-          reject(error);
-          return;
-        }
-        resolve({ path: outputPath, success: true });
-      });
-    }
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        logger.error('Scan error:', error);
+        logger.error('Scan stderr:', stderr);
+        reject(error);
+        return;
+      }
+      if (stderr) {
+        logger.info('Scan stderr (info):', stderr);
+      }
+      if (stdout) {
+        logger.info('Scan stdout:', stdout);
+      }
+      logger.info('Scan completed successfully');
+      resolve({ path: outputPath, success: true });
+    });
   });
 };
 
@@ -235,6 +111,13 @@ const createWindow = () => {
 const handleWebSocketConnection = (ws: WebSocket) => {
   logger.info('Client connected');
 
+  const sendError = (error: string) => {
+    ws.send(JSON.stringify({
+      type: 'error',
+      error
+    }));
+  };
+
   ws.on('message', async (message: string) => {
     try {
       const data = JSON.parse(message);
@@ -242,16 +125,38 @@ const handleWebSocketConnection = (ws: WebSocket) => {
 
       switch (data.type) {
         case 'get-scanners':
-          const scanners = await getScanners();
-          logger.info('Available scanners:', scanners);
-          ws.send(JSON.stringify({
-            type: 'scanners-list',
-            data: scanners
-          }));
+          try {
+            const scanners = await listScanners();
+            logger.info('Raw scanner list:', scanners);
+
+            const deviceList = scanners.length > 0 ? scanners : [{
+              id: 'demo-scanner',
+              name: 'Demo Scanner',
+              model: 'Demo Model (No physical scanner found)',
+              rawInfo: 'Demo scanner for testing when no physical scanner is available'
+            }];
+
+            logger.info('Processed scanner list:', 
+              deviceList.map(s => ({ id: s.id, name: s.name }))
+            );
+
+            ws.send(JSON.stringify({
+              type: 'scanners-list',
+              data: deviceList
+            }));
+          } catch (error) {
+            logger.error('Error listing scanners:', error);
+            sendError('Failed to get scanner list');
+          }
           break;
 
         case 'start-scan':
           try {
+            if (!data.deviceId) {
+              throw new Error('No device ID provided');
+            }
+
+            logger.info('Starting scan with device:', data.deviceId);
             const scanResult = await performScan(data.deviceId);
             logger.info('Scan completed:', scanResult);
 
@@ -269,26 +174,17 @@ const handleWebSocketConnection = (ws: WebSocket) => {
             }
           } catch (error) {
             logger.error('Scan failed:', error);
-            ws.send(JSON.stringify({
-              type: 'scan-error',
-              error: error instanceof Error ? error.message : 'Scan failed'
-            }));
+            sendError(error instanceof Error ? error.message : 'Scan failed');
           }
           break;
 
         default:
           logger.error('Unknown message type:', data.type);
-          ws.send(JSON.stringify({
-            type: 'error',
-            error: 'Unknown message type'
-          }));
+          sendError('Unknown message type');
       }
     } catch (error) {
       logger.error('Error processing message:', error);
-      ws.send(JSON.stringify({
-        type: 'error',
-        error: 'Invalid message format'
-      }));
+      sendError('Invalid message format');
     }
   });
 
