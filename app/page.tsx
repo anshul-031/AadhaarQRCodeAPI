@@ -66,22 +66,11 @@ export default function Home() {
               break;
 
             case 'scan-complete':
-              if (message.data.success && message.data.path) {
-                // Read the scanned image file and process it
-                fetch(`file://${message.data.path}`)
-                  .then(response => response.blob())
-                  .then(blob => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      const base64data = reader.result as string;
-                      handleScannedImage(base64data);
-                    };
-                    reader.readAsDataURL(blob);
-                  })
-                  .catch(error => {
-                    console.error('Error reading scanned file:', error);
-                    setError('Failed to process scanned image');
-                  });
+              if (message.data.success && message.data.base64) {
+                // Process the scanned image data
+                handleScannedImage(message.data.base64);
+              } else {
+                setError('Failed to receive scanned image data');
               }
               break;
 
@@ -127,12 +116,15 @@ export default function Home() {
     setResult(null);
 
     try {
+      // Extract the raw base64 data from the data URL
+      const rawBase64Data = base64Data.replace(/^data:image\/\w+;base64,/, '');
+
       const response = await fetch('/api/aadhaar', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ qrData: base64Data }),
+        body: JSON.stringify({ qrData: rawBase64Data }),
       });
 
       const data = await response.json();

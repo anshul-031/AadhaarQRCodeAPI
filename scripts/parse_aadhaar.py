@@ -378,17 +378,12 @@ def process_qr_data(input_data):
     try:
         logger.info("Starting QR data processing")
         
-        # Check if input is an image (base64)
-        if input_data.startswith(('data:image', 'iVBOR')):
-            logger.info("Input detected as base64 image")
-            # Decode image and extract QR data
-            img = decode_image(input_data)
-            logger.debug("Image decoded successfully")
-            qr_data = extract_qr_data(img)
-            logger.info("QR code extracted from image")
-        else:
-            logger.info("Input detected as raw QR data")
-            qr_data = input_data
+        logger.info("Input detected as base64 image")
+        # Decode image and extract QR data
+        img = decode_image(input_data)
+        logger.debug("Image decoded successfully")
+        qr_data = extract_qr_data(img)
+        logger.info("QR code extracted from image")
 
         logger.debug(f"QR Data format check - Starts with: {qr_data[:10]}...")
 

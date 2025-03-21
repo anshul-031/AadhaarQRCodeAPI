@@ -54,7 +54,7 @@ const createDemoScan = async (): Promise<string> => {
 };
 
 // Perform scan operation
-const performScan = async (deviceId: string): Promise<{ path: string; success: boolean }> => {
+const performScan = async (deviceId: string): Promise<{ path: string; success: boolean; base64?: string }> => {
   // Handle demo scanner
   if (deviceId === 'demo-scanner') {
     try {
@@ -87,7 +87,16 @@ const performScan = async (deviceId: string): Promise<{ path: string; success: b
         logger.info('Scan stdout:', stdout);
       }
       logger.info('Scan completed successfully');
-      resolve({ path: outputPath, success: true });
+
+      // Read the file as base64
+      fs.readFile(outputPath, { encoding: 'base64' }, (err, data) => {
+        if (err) {
+          logger.error('Error reading file as base64:', err);
+          reject(err);
+          return;
+        }
+        resolve({ path: outputPath, success: true, base64: data });
+      });
     });
   });
 };
@@ -166,7 +175,11 @@ const handleWebSocketConnection = (ws: WebSocket) => {
               logger.info('Scanned file verified:', scanResult.path);
               ws.send(JSON.stringify({
                 type: 'scan-complete',
-                data: scanResult
+                data: {
+                  success: scanResult.success,
+                  path: scanResult.path,
+                  base64: scanResult.base64
+                }
               }));
             } catch (fileError) {
               logger.error('Scanned file not found:', fileError);
