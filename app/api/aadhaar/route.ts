@@ -30,11 +30,18 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { qrData } = body;
+    const { qrData, userName } = body;
 
     if (!qrData) {
       return NextResponse.json(
         { error: 'QR data is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!userName) {
+      return NextResponse.json(
+        { error: 'User name is required' },
         { status: 400 }
       );
     }
@@ -52,7 +59,7 @@ export async function POST(request: NextRequest) {
     // Set up Python shell options
     const options: Options = {
       mode: 'text' as const,
-      pythonPath: 'python3',
+      pythonPath: 'python',
       args: [tempFilePath]
     };
 
@@ -110,6 +117,7 @@ export async function POST(request: NextRequest) {
           qr_details: qrData,
           error_message: errorMessage,
           timestamp: new Date(),
+          user_name: userName
         });
         return NextResponse.json(
           { error: errorMessage },
@@ -119,6 +127,7 @@ export async function POST(request: NextRequest) {
 
       await logSuccessfulQr({
         timestamp: new Date(),
+        user_name: userName
       });
 
       return NextResponse.json({
@@ -134,6 +143,7 @@ export async function POST(request: NextRequest) {
         qr_details: qrData,
         error_message: 'Python script error',
         timestamp: new Date(),
+        user_name: userName
       });
       return NextResponse.json(
         { error: 'Failed to process QR data' },

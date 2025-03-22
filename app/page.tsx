@@ -37,6 +37,7 @@ export default function Home() {
   const [scannerList, setScannerList] = useState<ScannerDevice[]>([]);
   const [selectedScanner, setSelectedScanner] = useState<string>('');
   const [wsError, setWsError] = useState<string | null>(null);
+  const [userName, setUserName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const webcamRef = useRef<Webcam>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -111,6 +112,11 @@ export default function Home() {
 
   // Handle scanned image processing
   const handleScannedImage = async (base64Data: string) => {
+    if (!userName.trim()) {
+      setError('Please enter your name first');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -124,7 +130,10 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ qrData: rawBase64Data }),
+        body: JSON.stringify({ 
+          qrData: rawBase64Data,
+          userName: userName
+        }),
       });
 
       const data = await response.json();
@@ -147,6 +156,11 @@ export default function Home() {
 
   // Handle scan button click
   const handleStartScan = () => {
+    if (!userName.trim()) {
+      setError('Please enter your name first');
+      return;
+    }
+
     if (!wsRef.current || !selectedScanner) {
       setError('Scanner not connected');
       return;
@@ -193,6 +207,11 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!userName.trim()) {
+      setError('Please enter your name first');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -203,7 +222,10 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ qrData }),
+        body: JSON.stringify({ 
+          qrData,
+          userName: userName
+        }),
       });
 
       const data = await response.json();
@@ -225,6 +247,11 @@ export default function Home() {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!userName.trim()) {
+      setError('Please enter your name first');
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -242,7 +269,10 @@ export default function Home() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ qrData: base64Data }),
+          body: JSON.stringify({ 
+            qrData: base64Data,
+            userName: userName
+          }),
         });
 
         const data = await response.json();
@@ -272,6 +302,11 @@ export default function Home() {
   };
 
   const captureImage = async () => {
+    if (!userName.trim()) {
+      setError('Please enter your name first');
+      return;
+    }
+
     const imageSrc = webcamRef.current?.getScreenshot();
     if (!imageSrc) {
       setError('Failed to capture image');
@@ -288,7 +323,10 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ qrData: imageSrc }),
+        body: JSON.stringify({ 
+          qrData: imageSrc,
+          userName: userName
+        }),
       });
 
       const data = await response.json();
@@ -331,6 +369,25 @@ export default function Home() {
         </div>
 
         <Card className="p-6 bg-white shadow-lg rounded-lg">
+          {/* Name Input Field */}
+          <div className="mb-6">
+            <label htmlFor="userName" className="block text-sm font-medium text-gray-700 mb-2">
+              Enter Your Name *
+            </label>
+            <Input
+              id="userName"
+              type="text"
+              value={userName}
+              onChange={(e) => {
+                setUserName(e.target.value);
+                setError(null);
+              }}
+              placeholder="Enter your name"
+              className="w-full"
+              required
+            />
+          </div>
+
           <Tabs defaultValue="camera" className="space-y-4" onValueChange={(value) => localStorage.setItem('lastUsedTab', value)}>
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="camera">Camera</TabsTrigger>
@@ -378,7 +435,7 @@ export default function Home() {
                   <Button
                     onClick={handleStartScan}
                     className="flex-1"
-                    disabled={loading || !selectedScanner}
+                    disabled={loading || !selectedScanner || !userName.trim()}
                   >
                     {loading ? (
                       <>
@@ -408,8 +465,15 @@ export default function Home() {
               <div className="flex flex-col items-center space-y-4">
                 {!showCamera ? (
                   <Button
-                    onClick={() => setShowCamera(true)}
+                    onClick={() => {
+                      if (!userName.trim()) {
+                        setError('Please enter your name first');
+                        return;
+                      }
+                      setShowCamera(true);
+                    }}
                     className="w-full"
+                    disabled={!userName.trim()}
                   >
                     <Camera className="mr-2 h-4 w-4" />
                     Start Camera
@@ -445,8 +509,16 @@ export default function Home() {
             </TabsContent>
 
             <TabsContent value="upload" className="space-y-4">
-              <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-6 cursor-pointer hover:border-gray-400 transition-colors"
-                   onClick={() => fileInputRef.current?.click()}>
+              <div 
+                className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer hover:border-gray-400 transition-colors ${!userName.trim() ? 'border-gray-200 opacity-50' : 'border-gray-300'}`}
+                onClick={() => {
+                  if (!userName.trim()) {
+                    setError('Please enter your name first');
+                    return;
+                  }
+                  fileInputRef.current?.click();
+                }}
+              >
                 <Upload className="h-8 w-8 text-gray-400 mb-2" />
                 <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
                 <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 5MB</p>
@@ -456,7 +528,7 @@ export default function Home() {
                   className="hidden"
                   accept="image/*"
                   onChange={handleFileUpload}
-                  disabled={loading}
+                  disabled={loading || !userName.trim()}
                 />
               </div>
             </TabsContent>
@@ -471,12 +543,13 @@ export default function Home() {
                     placeholder="Enter QR code data (base64 or hexadecimal format)"
                     className="w-full"
                     required
+                    disabled={!userName.trim()}
                   />
                 </div>
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={loading || !qrData}
+                  disabled={loading || !qrData || !userName.trim()}
                 >
                   {loading ? (
                     <>
