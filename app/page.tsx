@@ -8,18 +8,7 @@ import { Loader2, QrCode, Upload, Camera, Search, ScanLine } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Webcam from 'react-webcam';
-
-interface AadhaarData {
-  name: string;
-  gender: string;
-  dob: string;
-  address: string;
-  photo?: string | null;
-  issued_date: string;
-  issued_time: string;
-  mobile_number: string;
-  uid?: string;
-}
+import { processQrData, scanQrFromVideo, AadhaarData } from '@/lib/qr-processor';
 
 interface ScannerDevice {
   id: string;
@@ -27,7 +16,6 @@ interface ScannerDevice {
 }
 
 export default function Home() {
-  const [qrData, setQrData] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AadhaarData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +44,7 @@ export default function Home() {
         ws.send(JSON.stringify({ type: 'get-scanners' }));
       };
 
-      ws.onmessage = (event) => {
+      ws.onmessage = async (event) => {
         try {
           const message = JSON.parse(event.data);
           console.log('Received message:', message);
@@ -68,8 +56,8 @@ export default function Home() {
 
             case 'scan-complete':
               if (message.data.success && message.data.base64) {
-                // Process the scanned image data
-                handleScannedImage(message.data.base64);
+                // Process the scanned image data on client side
+                handleProcessedData(message.data.base64);
               } else {
                 setError('Failed to receive scanned image data');
               }
@@ -110,8 +98,8 @@ export default function Home() {
     };
   }, []);
 
-  // Handle scanned image processing
-  const handleScannedImage = async (base64Data: string) => {
+  // Handle processed data
+  const handleProcessedData = async (qrData: string) => {
     if (!userName.trim()) {
       setError('Please enter your name first');
       return;
@@ -122,33 +110,42 @@ export default function Home() {
     setResult(null);
 
     try {
-      // Extract the raw base64 data from the data URL
-      const rawBase64Data = base64Data.replace(/^data:image\/\w+;base64,/, '');
+      console.log('Starting QR processing');
+      const parsedData = await processQrData(qrData);
+      
+      if (!parsedData) {
+        console.error('QR processing returned null');
+        throw new Error('Failed to extract data from QR code. Please ensure the image contains a valid Aadhaar QR code and try again.');
+      }
 
+      console.log('QR data parsed successfully, sending to API');
       const response = await fetch('/api/aadhaar', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          qrData: rawBase64Data,
-          userName: userName
+        body: JSON.stringify({
+          parsedData,
+          userName
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to process scanned image');
+        console.error('API error:', data);
+        throw new Error(data.error || 'Failed to process QR data');
       }
 
-      if (data.success && data.data) {
-        setResult(data.data);
-      } else {
-        throw new Error(data.error || 'Failed to process scanned image');
-      }
+      console.log('API call successful');
+      setResult(parsedData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Error in handleProcessedData:', err);
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred while processing the QR code. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -205,7 +202,7 @@ export default function Home() {
     getCameras();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleManualInput = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userName.trim()) {
       setError('Please enter your name first');
@@ -216,34 +213,17 @@ export default function Home() {
     setError(null);
     setResult(null);
 
-    try {
-      const response = await fetch('/api/aadhaar', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          qrData,
-          userName: userName
-        }),
-      });
+    const form = e.target as HTMLFormElement;
+    const input = form.querySelector('input') as HTMLInputElement;
+    const qrData = input.value;
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to parse QR data');
-      }
-
-      if (data.success && data.data) {
-        setResult(data.data);
-      } else {
-        setError(data.error || 'Failed to parse QR data');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
+    if (!qrData) {
+      setError('Please enter QR data');
       setLoading(false);
+      return;
     }
+
+    await handleProcessedData(qrData);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -263,30 +243,7 @@ export default function Home() {
       const reader = new FileReader();
       reader.onload = async (event) => {
         const base64Data = event.target?.result as string;
-        
-        const response = await fetch('/api/aadhaar', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            qrData: base64Data,
-            userName: userName
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to parse QR code');
-        }
-
-        if (data.success && data.data) {
-          setResult(data.data);
-        } else {
-          setError(data.error || 'Failed to parse QR code');
-        }
-        setLoading(false);
+        await handleProcessedData(base64Data);
       };
 
       reader.onerror = () => {
@@ -313,39 +270,8 @@ export default function Home() {
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const response = await fetch('/api/aadhaar', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          qrData: imageSrc,
-          userName: userName
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to parse QR code');
-      }
-
-      if (data.success && data.data) {
-        setResult(data.data);
-        setShowCamera(false);
-      } else {
-        setError(data.error || 'Failed to parse QR code');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
+    await handleProcessedData(imageSrc);
+    setShowCamera(false);
   };
 
   const videoConstraints = {
@@ -388,7 +314,7 @@ export default function Home() {
             />
           </div>
 
-          <Tabs defaultValue="camera" className="space-y-4" onValueChange={(value) => localStorage.setItem('lastUsedTab', value)}>
+          <Tabs defaultValue="camera" className="space-y-4">
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="camera">Camera</TabsTrigger>
               <TabsTrigger value="scan">Scan</TabsTrigger>
@@ -534,12 +460,10 @@ export default function Home() {
             </TabsContent>
 
             <TabsContent value="manual">
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleManualInput} className="space-y-4">
                 <div>
                   <Input
                     type="text"
-                    value={qrData}
-                    onChange={(e) => setQrData(e.target.value)}
                     placeholder="Enter QR code data (base64 or hexadecimal format)"
                     className="w-full"
                     required
@@ -549,7 +473,7 @@ export default function Home() {
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={loading || !qrData || !userName.trim()}
+                  disabled={loading || !userName.trim()}
                 >
                   {loading ? (
                     <>
