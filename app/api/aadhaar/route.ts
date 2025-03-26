@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logFailedQr, logSuccessfulQr } from '@/lib/db';
+import { parseAadhaarQr } from '@/lib/aadhaar-processor';
 
 interface RequestBody {
-  parsedData: any;
+  qrData: string;
   userName: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as RequestBody;
-    const { parsedData, userName } = body;
+    const { qrData, userName } = body;
 
-    if (!parsedData) {
+    if (!qrData) {
       return NextResponse.json(
-        { error: 'Parsed QR data is required' },
+        { error: 'QR data is required' },
         { status: 400 }
       );
     }
@@ -25,6 +26,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Log the raw QR data for debugging
+    console.log('Received QR data:', qrData.substring(0, 100) + '...');
+
+    // Parse the QR data on the backend
+    const parsedData = await parseAadhaarQr(qrData);
+
+    if (!parsedData) {
+      throw new Error('Failed to parse QR data');
+    }
+
     // Log successful QR scan
     await logSuccessfulQr({
       timestamp: new Date(),
@@ -34,22 +45,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: parsedData,
-      message: 'Aadhaar data logged successfully'
+      message: 'Aadhaar data processed successfully'
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('API error:', error);
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const errorBody = await request.json().catch(() => ({})) as Partial<RequestBody>;
     
     await logFailedQr({
-      qr_details: 'Client-side parsing error',
-      error_message: error instanceof Error ? error.message : 'Unknown error',
+      qr_details: 'Failed to process QR data',
+      error_message: errorMessage,
       timestamp: new Date(),
       user_name: errorBody?.userName || 'unknown'
     });
     
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

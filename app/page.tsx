@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
@@ -8,7 +9,8 @@ import { Loader2, QrCode, Upload, Camera, Search, ScanLine } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Webcam from 'react-webcam';
-import { processQrData, scanQrFromVideo, AadhaarData } from '@/lib/qr-processor';
+import { extractQrFromImage, extractQrFromVideo } from '@/lib/qr-scanner';
+import { AadhaarData } from '@/lib/aadhaar-processor';
 
 interface ScannerDevice {
   id: string;
@@ -56,7 +58,7 @@ export default function Home() {
 
             case 'scan-complete':
               if (message.data.success && message.data.base64) {
-                // Process the scanned image data on client side
+                // Extract QR data from scanned image
                 handleProcessedData(message.data.base64);
               } else {
                 setError('Failed to receive scanned image data');
@@ -99,7 +101,7 @@ export default function Home() {
   }, []);
 
   // Handle processed data
-  const handleProcessedData = async (qrData: string) => {
+  const handleProcessedData = async (input: string) => {
     if (!userName.trim()) {
       setError('Please enter your name first');
       return;
@@ -110,22 +112,22 @@ export default function Home() {
     setResult(null);
 
     try {
-      console.log('Starting QR processing');
-      const parsedData = await processQrData(qrData);
+      console.log('Starting QR extraction');
+      const qrData = await extractQrFromImage(input);
       
-      if (!parsedData) {
-        console.error('QR processing returned null');
+      if (!qrData) {
+        console.error('QR extraction returned null');
         throw new Error('Failed to extract data from QR code. Please ensure the image contains a valid Aadhaar QR code and try again.');
       }
 
-      console.log('QR data parsed successfully, sending to API');
+      console.log('QR data extracted successfully, sending to API');
       const response = await fetch('/api/aadhaar', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          parsedData,
+          qrData,
           userName
         }),
       });
@@ -138,7 +140,7 @@ export default function Home() {
       }
 
       console.log('API call successful');
-      setResult(parsedData);
+      setResult(data.data);
     } catch (err) {
       console.error('Error in handleProcessedData:', err);
       if (err instanceof Error) {
