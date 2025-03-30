@@ -437,7 +437,7 @@ export default function Home() {
     }
 
     try {
-      await handleProcessedData({ input: imageSrc });
+      await handleProcessedData(imageSrc);
       setShowCamera(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to process captured image');
