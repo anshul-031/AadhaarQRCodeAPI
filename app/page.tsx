@@ -22,13 +22,12 @@ export default function Home() {
   const [result, setResult] = useState<AadhaarData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
-  const [scannedImage, setScannedImage] = useState<string | null>(null);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string | undefined>(undefined);
   const [scannerList, setScannerList] = useState<ScannerDevice[]>([]);
   const [selectedScanner, setSelectedScanner] = useState<string>('');
   const [wsError, setWsError] = useState<string | null>(null);
-  const [userName, setUserName] = useState('Adani');
+  const [userName, setUserName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const webcamRef = useRef<Webcam>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -48,68 +47,20 @@ export default function Home() {
       };
 
       ws.onmessage = async (event) => {
-        const startTime = performance.now();
         try {
           const message = JSON.parse(event.data);
-          const parseTime = performance.now();
-          console.log(`[Timing] WebSocket message parsed in ${(parseTime - startTime).toFixed(2)}ms`);
-          console.log('Received WebSocket message:', message);
+          console.log('Received message:', message);
 
           switch (message.type) {
             case 'scanners-list':
-              console.log('Received scanners list:', message.data);
               setScannerList(message.data);
               break;
 
             case 'scan-complete':
-              console.log('\n=== Scan Process Started ===');
-              console.log(`[Timing] Scan completed at ${new Date().toISOString()}`);
-              
-              // Get userName from scan request or state
-              const scanUserName = message.data.userName || userName;
-              console.log('Validating userName for scan:', {
-                fromMessage: message.data.userName,
-                fromState: userName,
-                using: scanUserName,
-                trimmed: scanUserName.trim(),
-                isEmpty: !scanUserName.trim()
-              });
-              
-              if (!scanUserName.trim()) {
-                console.error('Username validation failed in scan-complete');
-                setError('Please enter your name first');
-                setLoading(false);
-                return;
-              }
-              
               if (message.data.success && message.data.base64) {
-                try {
-                  console.log('[Step 1] Image Reception');
-                  console.log('Valid base64 image received from scanner');
-                  console.log('Base64 image length:', message.data.base64.length);
-                  console.log('Base64 prefix:', message.data.base64.substring(0, 20) + '...');
-                  
-                  // Add data:image/jpeg;base64, prefix if not present
-                  const base64Data = message.data.base64.startsWith('data:image')
-                    ? message.data.base64
-                    : `data:image/jpeg;base64,${message.data.base64}`;
-                  
-                  const imageProcessingStart = performance.now();
-                  console.log(`[Timing] Image reception took ${(imageProcessingStart - startTime).toFixed(2)}ms`);
-                  console.log('\n[Step 2] Starting QR extraction process...');
-                  console.log('Current userName:', userName);
-                  
-                  // Extract QR data from scanned image
-                  await handleProcessedData({
-                    input: base64Data,
-                    providedUserName: scanUserName
-                  });
-                } catch (err) {
-                  console.error('Error processing scanned image:', err);
-                  setError('Error processing scanned image: ' + (err instanceof Error ? err.message : String(err)));
-                }
+                // Extract QR data from scanned image
+                handleProcessedData(message.data.base64);
               } else {
-                console.error('Scan complete but invalid data:', message.data);
                 setError('Failed to receive scanned image data');
               }
               break;
@@ -130,21 +81,11 @@ export default function Home() {
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
         setWsError('Failed to connect to scanner service');
-        setLoading(false);
-        setError(null);
-        setResult(null);
-        setScannedImage(null);  // Reset image when connection fails
       };
 
       ws.onclose = () => {
         console.log('Scanner service connection closed');
         setWsError('Connection to scanner service lost');
-        // Reset all states when connection is lost
-        setLoading(false);
-        setError(null);
-        setResult(null);
-        setScannedImage(null);
-        setSelectedScanner('');
         // Try to reconnect after 5 seconds
         setTimeout(connectWebSocket, 5000);
       };
@@ -160,136 +101,61 @@ export default function Home() {
   }, []);
 
   // Handle processed data
-  const handleProcessedData = async ({
-    input,
-    providedUserName
-  }: {
-    input: string,
-    providedUserName?: string
-  }) => {
-    const startTime = performance.now();
-    console.log('\n=== Processing Pipeline Started ===');
-    console.log(`[Timing] Started at ${new Date().toISOString()}`);
-    console.log('Input type:', typeof input);
-    console.log('Input length:', input.length);
-
-    // Validate userName first
-    console.log('Validating userName:', {
-      userName,
-      length: userName.length,
-      trimmedLength: userName.trim().length,
-      isEmpty: !userName.trim()
-    });
-
+  const handleProcessedData = async (input: string) => {
     if (!userName.trim()) {
-      console.log('Username validation failed - empty name');
       setError('Please enter your name first');
-      setLoading(false);
       return;
     }
-
-    console.log('Username validation passed:', userName);
 
     setLoading(true);
     setError(null);
     setResult(null);
-    setScannedImage(null);
-
-    // Store the scanned image first
-    setScannedImage(input);
 
     try {
-      // Phase 1: QR Extraction
-      console.log('\n[Phase 1] QR Code Extraction');
-      const qrExtractionStart = performance.now();
-      console.log('Calling extractQrFromImage...');
+      console.log('Starting QR extraction');
       const qrData = await extractQrFromImage(input);
-      const qrExtractionEnd = performance.now();
-      const qrExtractionTime = (qrExtractionEnd - qrExtractionStart).toFixed(2);
-      console.log(`[Timing] QR extraction completed in ${qrExtractionTime}ms`);
       
       if (!qrData) {
         console.error('QR extraction returned null');
         throw new Error('Failed to extract data from QR code. Please ensure the image contains a valid Aadhaar QR code and try again.');
       }
 
-      console.log('QR data extracted successfully');
-      console.log('QR data length:', qrData.length);
-
-      // Phase 2: Aadhaar Data Parsing
-      console.log('\n[Phase 2] Aadhaar Data Parsing');
-      const aadhaarParsingStart = performance.now();
-      console.log('Preparing API request...');
-
-      const requestBody = JSON.stringify({
-        qrData,
-        userName
-      });
-      
-      console.log('Making API call to /api/aadhaar...');
+      console.log('QR data extracted successfully, sending to API');
       const response = await fetch('/api/aadhaar', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: requestBody,
+        body: JSON.stringify({
+          qrData,
+          userName
+        }),
       });
 
-      console.log('API response status:', response.status);
-      console.log('Parsing API response...');
       const data = await response.json();
-      const aadhaarParsingEnd = performance.now();
-      const aadhaarParsingTime = (aadhaarParsingEnd - aadhaarParsingStart).toFixed(2);
-      console.log(`[Timing] Aadhaar parsing completed in ${aadhaarParsingTime}ms`);
 
       if (!response.ok) {
         console.error('API error:', data);
-        console.error('Response status:', response.status);
-        console.error('Error details:', data.error || 'No error details provided');
         throw new Error(data.error || 'Failed to process QR data');
       }
 
-      // Calculate total processing time
-      const endTime = performance.now();
-      const totalTime = (endTime - startTime).toFixed(2);
-
-      console.log('\n=== Processing Complete ===');
-      console.log('Processing times:');
-      console.log(`- QR Extraction: ${qrExtractionTime}ms`);
-      console.log(`- Aadhaar Parsing: ${aadhaarParsingTime}ms`);
-      console.log(`- Total Time: ${totalTime}ms`);
-      console.log('Setting result with parsed data');
-      
+      console.log('API call successful');
       setResult(data.data);
     } catch (err) {
       console.error('Error in handleProcessedData:', err);
-      console.error('Error type:', err?.constructor?.name);
-      console.error('Full error details:', JSON.stringify(err, null, 2));
-
       if (err instanceof Error) {
-        console.error('Error stack:', err.stack);
         setError(err.message);
       } else {
-        console.error('Non-Error object thrown:', err);
         setError('An unexpected error occurred while processing the QR code. Please try again.');
       }
     } finally {
-      console.log('handleProcessedData completed, loading state cleared');
       setLoading(false);
     }
   };
 
   // Handle scan button click
   const handleStartScan = () => {
-    // Clean and validate userName first
-    const cleanUserName = userName.trim();
-    console.log('Starting scan:', {
-      userName: cleanUserName,
-      isValid: !!cleanUserName,
-      storedName: localStorage.getItem('userName')
-    });
-
-    if (!cleanUserName) {
+    if (!userName.trim()) {
       setError('Please enter your name first');
       return;
     }
@@ -299,21 +165,13 @@ export default function Home() {
       return;
     }
 
-    // Persist valid userName
-    localStorage.setItem('userName', cleanUserName);
-    setUserName(cleanUserName); // Ensure state is clean
-
     setLoading(true);
     setError(null);
     setResult(null);
-    setScannedImage(null); // Reset scanned image when starting new scan
 
-    console.log('Sending scan request with userName:', cleanUserName);
     wsRef.current.send(JSON.stringify({
       type: 'start-scan',
-      deviceId: selectedScanner,
-      userName: cleanUserName,  // Include username in the request
-      timestamp: new Date().toISOString()
+      deviceId: selectedScanner
     }));
   };
 
@@ -346,23 +204,6 @@ export default function Home() {
     getCameras();
   }, []);
 
-  // Effect to handle userName state persistence
-  useEffect(() => {
-    const savedUserName = localStorage.getItem('userName');
-    if (savedUserName) {
-      console.log('Restoring saved userName:', savedUserName);
-      setUserName(savedUserName);
-    }
-  }, []);
-
-  // Effect to save userName changes
-  useEffect(() => {
-    if (userName.trim()) {
-      console.log('Saving userName:', userName);
-      localStorage.setItem('userName', userName);
-    }
-  }, [userName]);
-
   const handleManualInput = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userName.trim()) {
@@ -373,7 +214,6 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setScannedImage(null);  // Reset when starting new input
 
     const form = e.target as HTMLFormElement;
     const input = form.querySelector('input') as HTMLInputElement;
@@ -385,7 +225,7 @@ export default function Home() {
       return;
     }
 
-    await handleProcessedData({ input: qrData });
+    await handleProcessedData(qrData);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -400,26 +240,23 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setScannedImage(null); // Reset scanned image when starting new file upload
 
     try {
       const reader = new FileReader();
       reader.onload = async (event) => {
         const base64Data = event.target?.result as string;
-        await handleProcessedData({ input: base64Data });
+        await handleProcessedData(base64Data);
       };
 
       reader.onerror = () => {
         setError('Failed to read file');
         setLoading(false);
-        setScannedImage(null); // Clear image on error
       };
 
       reader.readAsDataURL(file);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
       setLoading(false);
-      setScannedImage(null); // Clear image on any error
     }
   };
 
@@ -432,17 +269,11 @@ export default function Home() {
     const imageSrc = webcamRef.current?.getScreenshot();
     if (!imageSrc) {
       setError('Failed to capture image');
-      setScannedImage(null);  // Clear any previous image
       return;
     }
 
-    try {
-      await handleProcessedData(imageSrc);
-      setShowCamera(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to process captured image');
-      setScannedImage(null);  // Clear image on error
-    }
+    await handleProcessedData(imageSrc);
+    setShowCamera(false);
   };
 
   const videoConstraints = {
@@ -471,46 +302,18 @@ export default function Home() {
             <label htmlFor="userName" className="block text-sm font-medium text-gray-700 mb-2">
               Enter Your Name *
             </label>
-            <div>
-              <Input
-                id="userName"
-                type="text"
-                value={userName}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  const cleanValue = value.trim();
-                  console.log('Name Input Change:', {
-                    raw: value,
-                    cleaned: cleanValue,
-                    length: cleanValue.length
-                  });
-                  setUserName(cleanValue);
-                  if (cleanValue) {
-                    setError(null);
-                  }
-                }}
-                onBlur={(e) => {
-                  const value = e.target.value;
-                  const cleanValue = value.trim();
-                  console.log('Name Input Blur:', {
-                    raw: value,
-                    cleaned: cleanValue,
-                    previousName: userName,
-                    hasChanged: cleanValue !== userName
-                  });
-                  if (cleanValue !== userName) {
-                    setUserName(cleanValue);
-                    localStorage.setItem('userName', cleanValue);
-                  }
-                }}
-                placeholder="Enter your name"
-                className="w-full"
-                required
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Name entered: {userName || 'No name entered'}
-              </p>
-            </div>
+            <Input
+              id="userName"
+              type="text"
+              value={userName}
+              onChange={(e) => {
+                setUserName(e.target.value);
+                setError(null);
+              }}
+              placeholder="Enter your name"
+              className="w-full"
+              required
+            />
           </div>
 
           <Tabs defaultValue="camera" className="space-y-4">
@@ -548,12 +351,6 @@ export default function Home() {
                   <Button
                     onClick={() => {
                       console.log('Refreshing scanner list...');
-                      // Reset all states when refreshing scanners
-                      setLoading(false);
-                      setError(null);
-                      setResult(null);
-                      setScannedImage(null);
-                      setSelectedScanner('');
                       wsRef.current?.send(JSON.stringify({ type: 'get-scanners' }));
                     }}
                     variant="outline"
@@ -692,20 +489,6 @@ export default function Home() {
               </form>
             </TabsContent>
           </Tabs>
-
-          {/* Display scanned image */}
-          {scannedImage && (
-            <div className="mt-6 space-y-2">
-              <h3 className="text-lg font-semibold text-gray-700">Scanned Document</h3>
-              <div className="relative rounded-lg overflow-hidden border border-gray-200">
-                <img
-                  src={scannedImage}
-                  alt="Scanned document"
-                  className="w-full max-h-[400px] object-contain"
-                />
-              </div>
-            </div>
-          )}
 
           {loading && (
             <div className="mt-4 flex items-center justify-center">
