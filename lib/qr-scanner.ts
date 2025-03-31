@@ -1,9 +1,35 @@
 import { BrowserQRCodeReader } from '@zxing/browser';
 import jsQR from 'jsqr';
 
-async function preprocessImageData(img: HTMLImageElement): Promise<{ imageData: ImageData, canvas: HTMLCanvasElement }[]> {
+interface DetectionResult {
+  method: string;
+  scale?: number;
+  rotation?: number;
+  threshold?: number;
+  success: boolean;
+}
+
+function binarizeImageData(imageData: ImageData, threshold: number): ImageData {
+  const newImageData = new ImageData(
+    new Uint8ClampedArray(imageData.data),
+    imageData.width,
+    imageData.height
+  );
+  
+  for (let i = 0; i < newImageData.data.length; i += 4) {
+    const avg = (newImageData.data[i] + newImageData.data[i + 1] + newImageData.data[i + 2]) / 3;
+    const val = avg < threshold ? 0 : 255;
+    newImageData.data[i] = val;
+    newImageData.data[i + 1] = val;
+    newImageData.data[i + 2] = val;
+  }
+  
+  return newImageData;
+}
+
+async function preprocessImageData(img: HTMLImageElement): Promise<{ imageData: ImageData, canvas: HTMLCanvasElement, params: { scale: number, rotation: number, threshold?: number } }[]> {
   console.log('Preprocessing image:', img.width, 'x', img.height);
-  const results: { imageData: ImageData, canvas: HTMLCanvasElement }[] = [];
+  const results: { imageData: ImageData, canvas: HTMLCanvasElement, params: { scale: number, rotation: number, threshold?: number } }[] = [];
   
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -12,8 +38,10 @@ async function preprocessImageData(img: HTMLImageElement): Promise<{ imageData: 
     return results;
   }
 
-  const scales = [1, 1.5, 0.75];
+  // Prioritized scaling factors based on test results
+  const scales = [1, 0.5, 2, 0.75, 1.5];
   const rotations = [0, 90, 180, 270];
+  const thresholds = [128, 100, 150, 180]; // Prioritize standard threshold
 
   for (const scale of scales) {
     const width = Math.floor(img.width * scale);
@@ -31,36 +59,38 @@ async function preprocessImageData(img: HTMLImageElement): Promise<{ imageData: 
       ctx.restore();
 
       try {
+        // Original image data
         const imageData = ctx.getImageData(0, 0, width, height);
-        results.push({ imageData, canvas: canvas.cloneNode(true) as HTMLCanvasElement });
-      } catch (e) {
-        console.error('Error getting image data:', e);
-      }
+        results.push({ 
+          imageData, 
+          canvas: canvas.cloneNode(true) as HTMLCanvasElement,
+          params: { scale, rotation }
+        });
 
-      try {
-        const contrastData = ctx.getImageData(0, 0, width, height);
-        for (let i = 0; i < contrastData.data.length; i += 4) {
-          const avg = (contrastData.data[i] + contrastData.data[i + 1] + contrastData.data[i + 2]) / 3;
-          const val = avg < 128 ? 0 : 255;
-          contrastData.data[i] = val;
-          contrastData.data[i + 1] = val;
-          contrastData.data[i + 2] = val;
+        // Multiple threshold binarization
+        for (const threshold of thresholds) {
+          const binarizedData = binarizeImageData(imageData, threshold);
+          results.push({ 
+            imageData: binarizedData, 
+            canvas: canvas.cloneNode(true) as HTMLCanvasElement,
+            params: { scale, rotation, threshold }
+          });
         }
-        results.push({ imageData: contrastData, canvas: canvas.cloneNode(true) as HTMLCanvasElement });
-      } catch (e) {
-        console.error('Error enhancing contrast:', e);
-      }
 
-      try {
+        // Inverted image
         const invertedData = ctx.getImageData(0, 0, width, height);
         for (let i = 0; i < invertedData.data.length; i += 4) {
           invertedData.data[i] = 255 - invertedData.data[i];
           invertedData.data[i + 1] = 255 - invertedData.data[i + 1];
           invertedData.data[i + 2] = 255 - invertedData.data[i + 2];
         }
-        results.push({ imageData: invertedData, canvas: canvas.cloneNode(true) as HTMLCanvasElement });
+        results.push({ 
+          imageData: invertedData, 
+          canvas: canvas.cloneNode(true) as HTMLCanvasElement,
+          params: { scale, rotation, threshold: -1 }
+        });
       } catch (e) {
-        console.error('Error inverting colors:', e);
+        console.error('Error processing image variation:', e);
       }
     }
   }
@@ -70,7 +100,6 @@ async function preprocessImageData(img: HTMLImageElement): Promise<{ imageData: 
 }
 
 async function detectQRCodeWithJsQR(imageData: ImageData): Promise<string | null> {
-  console.log('Attempting to detect QR code with jsQR:', imageData.width, 'x', imageData.height);
   try {
     const code = jsQR(
       new Uint8ClampedArray(imageData.data.buffer),
@@ -82,8 +111,6 @@ async function detectQRCodeWithJsQR(imageData: ImageData): Promise<string | null
     );
     
     if (code) {
-      console.log('jsQR successfully detected QR code');
-      console.log('Raw QR data:', code.data.substring(0, 50) + '...');
       return code.data;
     }
     return null;
@@ -94,7 +121,6 @@ async function detectQRCodeWithJsQR(imageData: ImageData): Promise<string | null
 }
 
 async function detectQRCodeWithZXing(element: HTMLImageElement | HTMLCanvasElement): Promise<string | null> {
-  console.log('Attempting to detect QR code with ZXing');
   const codeReader = new BrowserQRCodeReader();
   
   try {
@@ -106,8 +132,6 @@ async function detectQRCodeWithZXing(element: HTMLImageElement | HTMLCanvasEleme
     }
     
     if (result) {
-      console.log('ZXing successfully detected QR code');
-      console.log('Raw QR data:', result.getText().substring(0, 50) + '...');
       return result.getText();
     }
   } catch (e) {
@@ -115,6 +139,78 @@ async function detectQRCodeWithZXing(element: HTMLImageElement | HTMLCanvasEleme
   }
   
   return null;
+}
+
+async function processInParallel<T>(items: T[], processor: (item: T) => Promise<string | null>): Promise<string | null> {
+  const chunkSize = 5; // Process 5 items at a time to avoid overwhelming
+  
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const results = await Promise.all(chunk.map(item => processor(item)));
+    
+    const validResult = results.find(r => r !== null);
+    if (validResult) {
+      return validResult;
+    }
+  }
+  
+  return null;
+}
+
+export async function analyzeQRDetectionMethods(input: string): Promise<DetectionResult[]> {
+  const results: DetectionResult[] = [];
+  
+  try {
+    const img = document.createElement('img');
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = input.startsWith('data:') ? input : `data:image/jpeg;base64,${input}`;
+    });
+
+    // Try ZXing on original image
+    const zxingResult = await detectQRCodeWithZXing(img);
+    results.push({
+      method: 'ZXing-Original',
+      success: zxingResult !== null
+    });
+
+    // Generate and try all variations
+    const variations = await preprocessImageData(img);
+    
+    // Try jsQR first since it's more reliable in Node environment
+    for (const variation of variations) {
+      const jsqrResult = await detectQRCodeWithJsQR(variation.imageData);
+      if (jsqrResult !== null) {
+        results.push({
+          method: 'jsQR',
+          scale: variation.params.scale,
+          rotation: variation.params.rotation,
+          threshold: variation.params.threshold,
+          success: true
+        });
+      }
+    }
+
+    // Only try ZXing if jsQR failed to find any results
+    if (!results.some(r => r.success)) {
+      for (const variation of variations) {
+        const zxingVariationResult = await detectQRCodeWithZXing(variation.canvas);
+        results.push({
+          method: 'ZXing',
+          scale: variation.params.scale,
+          rotation: variation.params.rotation,
+          threshold: variation.params.threshold,
+          success: zxingVariationResult !== null
+        });
+      }
+    }
+
+  } catch (e) {
+    console.error('Error during analysis:', e);
+  }
+
+  return results;
 }
 
 export async function extractQrFromImage(input: string): Promise<string> {
@@ -136,20 +232,32 @@ export async function extractQrFromImage(input: string): Promise<string> {
     });
     console.log('Image loaded successfully:', img.width, 'x', img.height);
 
-    // Try original image first
-    qrData = await detectQRCodeWithZXing(img);
+    // Try original image first with jsQR since it's more reliable
+    const imgData = new ImageData(img.width, img.height);
+    qrData = await detectQRCodeWithJsQR(imgData);
     
     if (!qrData) {
-      // Try preprocessed variations
-      const variations = await preprocessImageData(img);
-      console.log(`Trying ${variations.length} different image variations`);
+      // Try ZXing on original image
+      qrData = await detectQRCodeWithZXing(img);
       
-      for (const variation of variations) {
-        qrData = await detectQRCodeWithJsQR(variation.imageData);
-        if (qrData) break;
+      if (!qrData) {
+        // Generate all variations
+        const variations = await preprocessImageData(img);
+        console.log(`Processing ${variations.length} different image variations in parallel`);
         
-        qrData = await detectQRCodeWithZXing(variation.canvas);
-        if (qrData) break;
+        // Try jsQR in parallel
+        qrData = await processInParallel(
+          variations.map(v => v.imageData),
+          detectQRCodeWithJsQR
+        );
+        
+        // If jsQR failed, try ZXing in parallel
+        if (!qrData) {
+          qrData = await processInParallel(
+            variations.map(v => v.canvas),
+            detectQRCodeWithZXing
+          );
+        }
       }
     }
 
