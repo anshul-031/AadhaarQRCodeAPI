@@ -36,11 +36,16 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to parse QR data');
     }
 
-    // Log successful QR scan
-    await logSuccessfulQr({
-      timestamp: new Date(),
-      user_name: userName
-    });
+    // Log successful QR scan (optional)
+    try {
+      await logSuccessfulQr({
+        timestamp: new Date(),
+        user_name: userName
+      });
+    } catch (logError) {
+      console.error("Error logging successful QR:", logError);
+      // Continue without failing the request
+    }
 
     return NextResponse.json({
       success: true,
@@ -53,13 +58,19 @@ export async function POST(request: NextRequest) {
     
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const errorBody = await request.json().catch(() => ({})) as Partial<RequestBody>;
-    
-    await logFailedQr({
-      qr_details: 'Failed to process QR data',
-      error_message: errorMessage,
-      timestamp: new Date(),
-      user_name: errorBody?.userName || 'unknown'
-    });
+
+    // Log failed QR scan (optional)
+    try {
+      await logFailedQr({
+        qr_details: 'Failed to process QR data',
+        error_message: errorMessage,
+        timestamp: new Date(),
+        user_name: errorBody?.userName || 'unknown'
+      });
+    } catch (logError) {
+      console.error("Error logging failed QR:", logError);
+      // Continue without failing the request further
+    }
     
     return NextResponse.json(
       { error: errorMessage },
