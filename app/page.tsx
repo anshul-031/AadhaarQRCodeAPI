@@ -58,9 +58,12 @@ export default function Home() {
 
             case 'scan-complete':
               if (message.data.success && message.data.base64) {
+                console.timeEnd('Scan Time');
                 // Extract QR data from scanned image
                 handleProcessedData(message.data.base64);
               } else {
+                console.timeEnd('Scan Time');
+                console.timeEnd('Total Process Time');
                 setError('Failed to receive scanned image data');
               }
               break;
@@ -113,14 +116,18 @@ export default function Home() {
 
     try {
       console.log('Starting QR extraction');
+      console.time('QR Extraction Time');
       const qrData = await extractQrFromImage(input);
+      console.timeEnd('QR Extraction Time');
       
       if (!qrData) {
         console.error('QR extraction returned null');
+        console.timeEnd('Total Process Time');
         throw new Error('Failed to extract data from QR code. Please ensure the image contains a valid Aadhaar QR code and try again.');
       }
 
       console.log('QR data extracted successfully, sending to API');
+      console.time('API Response Time');
       const response = await fetch('/api/aadhaar', {
         method: 'POST',
         headers: {
@@ -133,14 +140,17 @@ export default function Home() {
       });
 
       const data = await response.json();
+      console.timeEnd('API Response Time');
 
       if (!response.ok) {
         console.error('API error:', data);
+        console.timeEnd('Total Process Time');
         throw new Error(data.error || 'Failed to process QR data');
       }
 
       console.log('API call successful');
       setResult(data.data);
+      console.timeEnd('Total Process Time');
     } catch (err) {
       console.error('Error in handleProcessedData:', err);
       if (err instanceof Error) {
@@ -148,6 +158,7 @@ export default function Home() {
       } else {
         setError('An unexpected error occurred while processing the QR code. Please try again.');
       }
+      console.timeEnd('Total Process Time');
     } finally {
       setLoading(false);
     }
@@ -168,6 +179,10 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResult(null);
+
+    // Record scan start time
+    console.time('Total Process Time');
+    console.time('Scan Time');
 
     wsRef.current.send(JSON.stringify({
       type: 'start-scan',
