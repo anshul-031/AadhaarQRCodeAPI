@@ -27,7 +27,7 @@ export default function Home() {
   const [scannerList, setScannerList] = useState<ScannerDevice[]>([]);
   const [selectedScanner, setSelectedScanner] = useState<string>('');
   const [wsError, setWsError] = useState<string | null>(null);
-  const [userName, setUserName] = useState('');
+  const [userName, setUserName] = useState('Adani');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const webcamRef = useRef<Webcam>(null);
   const wsRef = useRef<WebSocket | null>(null);
