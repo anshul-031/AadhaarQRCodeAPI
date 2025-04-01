@@ -24,6 +24,14 @@ export default function Home() {
   const [showCamera, setShowCamera] = useState(false);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string | undefined>(undefined);
+  const [scanResolution, setScanResolution] = useState('300');
+  const [scanArea, setScanArea] = useState('A4');
+  const [scanColorMode, setScanColorMode] = useState('Color');
+
+  // Scanner configurations
+  const resolutionOptions = ['100', '200', '300', '400', '600'];
+  const areaOptions = ['A4', 'A5', 'A6', 'Legal', 'Letter'];
+  const colorOptions = ['Color', 'Grayscale', 'BlackAndWhite'];
   const [scannerList, setScannerList] = useState<ScannerDevice[]>([]);
   const [selectedScanner, setSelectedScanner] = useState<string>('');
   const [wsError, setWsError] = useState<string | null>(null);
@@ -186,7 +194,12 @@ export default function Home() {
 
     wsRef.current.send(JSON.stringify({
       type: 'start-scan',
-      deviceId: selectedScanner
+      deviceId: selectedScanner,
+      settings: {
+        resolution: parseInt(scanResolution),
+        area: scanArea,
+        colorMode: scanColorMode
+      }
     }));
   };
 
@@ -357,6 +370,55 @@ export default function Home() {
                     ))}
                   </select>
                 </div>
+
+                {/* Scanner Settings */}
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Resolution */}
+                  <div>
+                    <label className="text-sm text-gray-600 mb-1 block">Resolution (DPI)</label>
+                    <select
+                      className="w-full p-2 border rounded-md"
+                      value={scanResolution}
+                      onChange={(e) => setScanResolution(e.target.value)}
+                      disabled={loading}
+                    >
+                      {resolutionOptions.map((res) => (
+                        <option key={res} value={res}>{res} DPI</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Scan Area */}
+                  <div>
+                    <label className="text-sm text-gray-600 mb-1 block">Paper Size</label>
+                    <select
+                      className="w-full p-2 border rounded-md"
+                      value={scanArea}
+                      onChange={(e) => setScanArea(e.target.value)}
+                      disabled={loading}
+                    >
+                      {areaOptions.map((area) => (
+                        <option key={area} value={area}>{area}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Color Mode */}
+                  <div>
+                    <label className="text-sm text-gray-600 mb-1 block">Color Mode</label>
+                    <select
+                      className="w-full p-2 border rounded-md"
+                      value={scanColorMode}
+                      onChange={(e) => setScanColorMode(e.target.value)}
+                      disabled={loading}
+                    >
+                      {colorOptions.map((mode) => (
+                        <option key={mode} value={mode}>{mode}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 {!selectedScanner && (
                   <div className="text-sm text-gray-600">
                     No scanners found. Make sure the Aadhaar Scanner Service is running and your scanner is connected.
