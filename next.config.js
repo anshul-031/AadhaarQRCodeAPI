@@ -21,6 +21,10 @@ const nextConfig = {
     }
     return config;
   },
+  // Add environment variables that should be available on the client
+  env: {
+    NEXT_PUBLIC_DYNAMSOFT_LICENSE: process.env.NEXT_PUBLIC_DYNAMSOFT_LICENSE,
+  },
 };
 
 module.exports = nextConfig;
