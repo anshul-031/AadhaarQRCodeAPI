@@ -43,12 +43,12 @@ export default function Home() {
   // Initialize WebSocket connection
   useEffect(() => {
     const connectWebSocket = () => {
-      console.log('Connecting to scanner service...');
+      // console.log('Connecting to scanner service...');
       const ws = new WebSocket('ws://localhost:3500');
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log('Connected to scanner service');
+        // console.log('Connected to scanner service');
         setWsError(null);
         // Request scanner list on connection
         ws.send(JSON.stringify({ type: 'get-scanners' }));
@@ -57,7 +57,7 @@ export default function Home() {
       ws.onmessage = async (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log('Received message:', message);
+          // console.log('Received message:', message);
 
           switch (message.type) {
             case 'scanners-list':
@@ -85,17 +85,17 @@ export default function Home() {
               break;
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+          // console.error('Error parsing WebSocket message:', error);
         }
       };
 
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        // console.error('WebSocket error:', error);
         setWsError('Failed to connect to scanner service');
       };
 
       ws.onclose = () => {
-        console.log('Scanner service connection closed');
+        // console.log('Scanner service connection closed');
         setWsError('Connection to scanner service lost');
         // Try to reconnect after 5 seconds
         setTimeout(connectWebSocket, 5000);
@@ -427,7 +427,7 @@ export default function Home() {
                 <div className="flex justify-between space-x-4">
                   <Button
                     onClick={() => {
-                      console.log('Refreshing scanner list...');
+                      // console.log('Refreshing scanner list...');
                       wsRef.current?.send(JSON.stringify({ type: 'get-scanners' }));
                     }}
                     variant="outline"
