@@ -6,7 +6,7 @@ A comprehensive solution for scanning and processing Aadhaar QR codes using vari
 
 - Multiple input methods:
   - External Scanner Support (via Desktop Scanner Service)
-  - Camera-based QR scanning (using Dynamsoft Barcode Reader)
+  - Camera-based QR scanning
   - File upload
   - Manual data entry
 - Real-time QR code processing
@@ -33,13 +33,7 @@ npm install
 cp .env.example .env
 ```
 
-4. Set up Dynamsoft Barcode Reader:
-   - Create a 'public/dbr-resources' directory
-   - Download Dynamsoft resources from [Dynamsoft CDN](https://www.dynamsoft.com/barcode-reader/docs/web/programming/javascript/user-guide/index.html#getting-started)
-   - Extract and place the resources in the 'public/dbr-resources' directory
-   - Replace the license key in `lib/qr-scanner.ts` with your Dynamsoft license key
-
-5. For scanner support, set up the Desktop Scanner Service:
+4. For scanner support, set up the Desktop Scanner Service:
 ```bash
 cd desktop-scanner
 npm install
@@ -80,20 +74,6 @@ The application includes a desktop scanner service that enables integration with
 - Proper scanner drivers installed
 - Scanner service running on the same machine as the browser
 
-## QR Code Scanning
-
-The application uses Dynamsoft Barcode Reader for QR code scanning, which provides:
-- High accuracy QR code detection
-- Support for damaged or poorly lit QR codes
-- Fast scanning performance
-- Multiple image format support
-
-To optimize QR code scanning:
-1. Ensure good lighting conditions
-2. Keep the QR code within the scanning area
-3. Hold the camera steady when scanning
-4. Make sure the QR code is not damaged or obscured
-
 ## Contributing
 
 1. Fork the repository
@@ -108,9 +88,9 @@ To optimize QR code scanning:
 
 To build the desktop app for Windows and macOS, follow these steps:
 
-1. Navigate to the `desktop-scanner` directory: `cd desktop-scanner`
-2. Install the dependencies: `npm install`
-3. Run the build command: `npm run dist`
+1.  Navigate to the `desktop-scanner` directory: `cd desktop-scanner`
+2.  Install the dependencies: `npm install`
+3.  Run the build command: `npm run dist`
 
 The executable files will be created in the `desktop-scanner/release` directory.
 
@@ -120,27 +100,24 @@ This project is a Next.js application that parses Aadhaar QR code data using a P
 
 ## Prerequisites
 
-* Node.js
-* Python 3
-* python-shell package (`pip install python-shell`)
-* PostgreSQL
-* Dynamsoft Barcode Reader license (get one from [Dynamsoft's website](https://www.dynamsoft.com))
+*   Node.js
+*   Python 3
+*   python-shell package (`pip install python-shell`)
+*   PostgreSQL
 
 ## Setup
 
-1. Clone the repository.
-2. Install the dependencies: `npm install`
-3. Set up PostgreSQL:
-   * Install PostgreSQL on your local machine or use a cloud-based PostgreSQL service.
-   * Create a database named `instantverify_test`.
-   * Obtain the database connection string.
-   * Set the `DATABASE_URL` environment variable in the `.env` file with the connection string.
-4. Set up Dynamsoft resources in the public directory
-5. Start the Next.js development server: `npm run dev`
-6. Send a POST request to the `/api/aadhaar` endpoint with the QR code data in the request body.
+1.  Clone the repository.
+2.  Install the dependencies: `npm install`
+3.  Set up PostgreSQL:
+    *   Install PostgreSQL on your local machine or use a cloud-based PostgreSQL service.
+    *   Create a database named `instantverify_test`.
+    *   Obtain the database connection string.
+    *   Set the `DATABASE_URL` environment variable in the `.env` file with the connection string.
+4.  Start the Next.js development server: `npm run dev`
+5.  Send a POST request to the `/api/aadhaar` endpoint with the QR code data in the request body.
 
 ## Notes
 
-* The `parse_aadhaar.py` script is located in the `public/scripts` directory.
-* The Next.js application executes the Python script using the `python-shell` package.
-* Dynamsoft resources must be properly set up in the public directory for QR scanning to work.
+*   The `parse_aadhaar.py` script is located in the `public/scripts` directory.
+*   The Next.js application executes the Python script using the `python-shell` package.
