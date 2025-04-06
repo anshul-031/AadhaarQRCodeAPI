@@ -7,7 +7,20 @@ interface DetectionResult {
   scale?: number;
   rotation?: number;
   threshold?: number;
+  contrast?: number;  // Contrast factor used
+  inverted?: boolean; // Whether the image was inverted
+  sharpen?: boolean;  // Whether sharpening was applied
   success: boolean;
+}
+
+// Interface for parameters of image variations
+interface VariationParams {
+ scale: number;
+ rotation: number;
+ threshold?: number; // Binarization threshold (undefined for original/contrasted/inverted)
+ contrast?: number;  // Contrast factor (undefined for original/binarized/inverted)
+ inverted?: boolean; // True if inverted
+ sharpen?: boolean;  // True if sharpened
 }
 
 function binarizeImageData(imageData: ImageData, threshold: number): ImageData {
@@ -28,9 +41,161 @@ function binarizeImageData(imageData: ImageData, threshold: number): ImageData {
   return newImageData;
 }
 
-async function preprocessImageData(img: HTMLImageElement): Promise<{ imageData: ImageData, canvas: HTMLCanvasElement, params: { scale: number, rotation: number, threshold?: number } }[]> {
+function adjustContrast(imageData: ImageData, factor: number): ImageData {
+  const data = new Uint8ClampedArray(imageData.data);
+  const width = imageData.width;
+  const height = imageData.height;
+  const newImageData = new ImageData(data, width, height);
+
+  // We'll use a simpler factor approach: value = factor * (value - 128) + 128
+  const contrastFactor = factor;
+
+  for (let i = 0; i < data.length; i += 4) { // Loop starts
+    // Apply contrast factor to R, G, B
+    data[i] = Math.max(0, Math.min(255, contrastFactor * (data[i] - 128) + 128)); // Red
+    data[i + 1] = Math.max(0, Math.min(255, contrastFactor * (data[i + 1] - 128) + 128)); // Green
+    data[i + 2] = Math.max(0, Math.min(255, contrastFactor * (data[i + 2] - 128) + 128)); // Blue
+  } // Loop ends
+  return newImageData; // Return AFTER loop
+}
+
+// Basic 3x3 sharpening kernel
+const sharpeningKernel = [
+  [ 0, -1,  0],
+  [-1,  5, -1],
+  [ 0, -1,  0]
+];
+
+// Function to apply a convolution kernel (used for sharpening)
+function applyConvolution(imageData: ImageData, kernel: number[][]): ImageData {
+  const srcData = imageData.data;
+  const width = imageData.width;
+  const height = imageData.height;
+  const src = new Uint8ClampedArray(srcData); // Copy source data
+  const dst = new Uint8ClampedArray(srcData.length);
+  const kernelSize = kernel.length;
+  const halfKernel = Math.floor(kernelSize / 2);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let r = 0, g = 0, b = 0;
+      for (let ky = 0; ky < kernelSize; ky++) {
+        for (let kx = 0; kx < kernelSize; kx++) {
+          const imgY = Math.min(height - 1, Math.max(0, y + ky - halfKernel));
+          const imgX = Math.min(width - 1, Math.max(0, x + kx - halfKernel));
+          const weight = kernel[ky][kx];
+          const offset = (imgY * width + imgX) * 4;
+          r += src[offset] * weight;
+          g += src[offset + 1] * weight;
+          b += src[offset + 2] * weight;
+        }
+      }
+      const dstOffset = (y * width + x) * 4;
+      dst[dstOffset] = Math.max(0, Math.min(255, r));
+      dst[dstOffset + 1] = Math.max(0, Math.min(255, g));
+      dst[dstOffset + 2] = Math.max(0, Math.min(255, b));
+      dst[dstOffset + 3] = src[dstOffset + 3]; // Keep alpha
+    }
+  }
+  return new ImageData(dst, width, height);
+}
+
+function sharpenImageData(imageData: ImageData): ImageData {
+    return applyConvolution(imageData, sharpeningKernel);
+}
+
+
+// Type for the result of preprocessImageData
+type ProcessedVariation = {
+  imageData: ImageData;
+  canvas: HTMLCanvasElement;
+  params: VariationParams;
+};
+
+// Helper function to generate binarized and inverted versions for a given image data
+function generateSubVariations(
+  imageData: ImageData,
+  canvas: HTMLCanvasElement,
+  params: VariationParams,
+  thresholds: number[],
+  results: ProcessedVariation[]
+) {
+  const width = imageData.width;
+  const height = imageData.height;
+
+  // Add the base image itself (original, contrasted, or sharpened)
+  results.push({ imageData, canvas, params });
+
+  // Add binarized versions
+  for (const threshold of thresholds) {
+    const binarizedData = binarizeImageData(imageData, threshold);
+    const binarizedCanvas = document.createElement('canvas');
+    binarizedCanvas.width = width;
+    binarizedCanvas.height = height;
+    const binarizedCtx = binarizedCanvas.getContext('2d');
+    if (binarizedCtx) {
+      binarizedCtx.putImageData(binarizedData, 0, 0);
+      results.push({
+        imageData: binarizedData,
+        canvas: binarizedCanvas,
+        params: { ...params, threshold }
+      });
+    }
+  }
+
+  // Add inverted version
+  const invertedData = new ImageData(new Uint8ClampedArray(imageData.data), width, height);
+  for (let i = 0; i < invertedData.data.length; i += 4) {
+    invertedData.data[i] = 255 - invertedData.data[i];
+    invertedData.data[i + 1] = 255 - invertedData.data[i + 1];
+    invertedData.data[i + 2] = 255 - invertedData.data[i + 2];
+  }
+  const invertedCanvas = document.createElement('canvas');
+  invertedCanvas.width = width;
+  invertedCanvas.height = height;
+  const invertedCtx = invertedCanvas.getContext('2d');
+  if (invertedCtx) {
+    invertedCtx.putImageData(invertedData, 0, 0);
+    results.push({
+      imageData: invertedData,
+      canvas: invertedCanvas,
+      params: { ...params, inverted: true }
+    });
+  }
+}
+
+
+// Helper function to add variations including sharpening
+function addVariations(
+  baseImageData: ImageData,
+  baseCanvas: HTMLCanvasElement,
+  baseParams: { scale: number, rotation: number, contrast?: number },
+  thresholds: number[],
+  results: ProcessedVariation[]
+) {
+  // Generate variations for the non-sharpened base image
+  generateSubVariations(baseImageData, baseCanvas, baseParams, thresholds, results);
+
+  // Generate variations for the sharpened base image
+  try {
+    const sharpenedImageData = sharpenImageData(baseImageData);
+    const sharpenedCanvas = document.createElement('canvas');
+    sharpenedCanvas.width = baseImageData.width;
+    sharpenedCanvas.height = baseImageData.height;
+    const sharpenedCtx = sharpenedCanvas.getContext('2d');
+    if (sharpenedCtx) {
+      sharpenedCtx.putImageData(sharpenedImageData, 0, 0);
+      generateSubVariations(sharpenedImageData, sharpenedCanvas, { ...baseParams, sharpen: true }, thresholds, results);
+    }
+  } catch (e) {
+      console.error("Error applying sharpening:", e);
+  }
+}
+
+
+async function preprocessImageData(img: HTMLImageElement): Promise<ProcessedVariation[]> {
   console.log('Preprocessing image:', img.width, 'x', img.height);
-  const results: { imageData: ImageData, canvas: HTMLCanvasElement, params: { scale: number, rotation: number, threshold?: number } }[] = [];
+  const results: ProcessedVariation[] = [];
   
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -39,14 +204,16 @@ async function preprocessImageData(img: HTMLImageElement): Promise<{ imageData: 
     return results;
   }
 
-  // Prioritized scaling factors based on test results
   const scales = [1, 0.5, 2, 0.75, 1.5];
   const rotations = [0, 90, 180, 270];
-  const thresholds = [128, 100, 150, 180]; // Prioritize standard threshold
+  const thresholds = [128, 100, 150, 180];
+  const contrastFactors = [1.5, 2.0]; // Moderate and High contrast increase
 
   for (const scale of scales) {
     const width = Math.floor(img.width * scale);
     const height = Math.floor(img.height * scale);
+
+    if (width <= 0 || height <= 0) continue;
 
     canvas.width = width;
     canvas.height = height;
@@ -60,43 +227,36 @@ async function preprocessImageData(img: HTMLImageElement): Promise<{ imageData: 
       ctx.restore();
 
       try {
-        // Original image data
-        const imageData = ctx.getImageData(0, 0, width, height);
-        results.push({ 
-          imageData, 
-          canvas: canvas.cloneNode(true) as HTMLCanvasElement,
-          params: { scale, rotation }
-        });
+        // --- Process Original Contrast ---
+        const originalImageData = ctx.getImageData(0, 0, width, height);
+        // Pass the original canvas for this set of variations
+        const originalCanvasClone = canvas.cloneNode(true) as HTMLCanvasElement;
+        addVariations(originalImageData, originalCanvasClone, { scale, rotation }, thresholds, results);
 
-        // Multiple threshold binarization
-        for (const threshold of thresholds) {
-          const binarizedData = binarizeImageData(imageData, threshold);
-          results.push({ 
-            imageData: binarizedData, 
-            canvas: canvas.cloneNode(true) as HTMLCanvasElement,
-            params: { scale, rotation, threshold }
-          });
+        // --- Process Increased Contrast ---
+        for (const factor of contrastFactors) {
+          const contrastedImageData = adjustContrast(originalImageData, factor);
+          const contrastedCanvas = document.createElement('canvas');
+          contrastedCanvas.width = width;
+          contrastedCanvas.height = height;
+          const contrastedCtx = contrastedCanvas.getContext('2d');
+          if (contrastedCtx) {
+            contrastedCtx.putImageData(contrastedImageData, 0, 0);
+            addVariations(contrastedImageData, contrastedCanvas, { scale, rotation, contrast: factor }, thresholds, results);
+          }
         }
 
-        // Inverted image
-        const invertedData = ctx.getImageData(0, 0, width, height);
-        for (let i = 0; i < invertedData.data.length; i += 4) {
-          invertedData.data[i] = 255 - invertedData.data[i];
-          invertedData.data[i + 1] = 255 - invertedData.data[i + 1];
-          invertedData.data[i + 2] = 255 - invertedData.data[i + 2];
-        }
-        results.push({ 
-          imageData: invertedData, 
-          canvas: canvas.cloneNode(true) as HTMLCanvasElement,
-          params: { scale, rotation, threshold: -1 }
-        });
       } catch (e) {
-        console.error('Error processing image variation:', e);
+        if (e instanceof DOMException && e.name === 'SecurityError') {
+          console.warn(`SecurityError processing variation (Scale=${scale}, Rotation=${rotation}). Skipping.`);
+        } else {
+          console.error(`Error processing image variation (Scale=${scale}, Rotation=${rotation}):`, e);
+        }
       }
     }
   }
 
-  console.log(`Generated ${results.length} image variations`);
+  console.log(`Generated ${results.length} image variations (incl. contrast/sharpening adjustments)`);
   return results;
 }
 
@@ -138,7 +298,10 @@ async function detectQRCodeWithZXing(element: HTMLImageElement | HTMLCanvasEleme
       return result.getText();
     }
   } catch (e) {
-    console.error('ZXing detection error:', e);
+    // Reduce noise for common ZXing errors
+    if (!(e instanceof Error && e.name === 'NotFoundException')) {
+       console.error('ZXing detection error:', e);
+    }
   }
   
   return null;
@@ -188,34 +351,39 @@ export async function analyzeQRDetectionMethods(input: string): Promise<Detectio
       success: zxingResult !== null
     });
 
-    // Generate and try all variations
+    // Generate and try all variations (including contrast/sharpening)
     const variations = await preprocessImageData(img);
     
-    // Try jsQR first since it's more reliable in Node environment
+    // Try jsQR on all variations
     for (const variation of variations) {
       const jsqrResult = await detectQRCodeWithJsQR(variation.imageData);
-      if (jsqrResult !== null) {
-        results.push({
-          method: 'jsQR',
-          scale: variation.params.scale,
-          rotation: variation.params.rotation,
-          threshold: variation.params.threshold,
-          success: true
-        });
-      }
+      results.push({
+        method: 'jsQR',
+        scale: variation.params.scale,
+        rotation: variation.params.rotation,
+        threshold: variation.params.threshold,
+        contrast: variation.params.contrast,
+        inverted: variation.params.inverted,
+        sharpen: variation.params.sharpen,
+        success: jsqrResult !== null
+      });
     }
 
     // Only try ZXing if jsQR failed to find any results
     if (!results.some(r => r.success)) {
+      // Try ZXing on all variations
       for (const variation of variations) {
-        const zxingVariationResult = await detectQRCodeWithZXing(variation.canvas);
-        results.push({
-          method: 'ZXing',
-          scale: variation.params.scale,
-          rotation: variation.params.rotation,
-          threshold: variation.params.threshold,
-          success: zxingVariationResult !== null
-        });
+         const zxingVariationResult = await detectQRCodeWithZXing(variation.canvas);
+         results.push({
+           method: 'ZXing',
+           scale: variation.params.scale,
+           rotation: variation.params.rotation,
+           threshold: variation.params.threshold,
+           contrast: variation.params.contrast,
+           inverted: variation.params.inverted,
+           sharpen: variation.params.sharpen,
+           success: zxingVariationResult !== null
+         });
       }
     }
 
@@ -290,7 +458,7 @@ export async function extractQrFromImage(input: string): Promise<string> {
       if (jsQRResult) {
         qrData = jsQRResult.result;
         const params = variations[jsQRResult.index].params;
-        console.log(`Success: QR extracted using jsQR on variation ${jsQRResult.index}: Scale=${params.scale}, Rotation=${params.rotation}, Threshold=${params.threshold ?? 'N/A'}`);
+        console.log(`Success: QR extracted using jsQR on variation ${jsQRResult.index}: Scale=${params.scale}, Rotation=${params.rotation}, Threshold=${params.threshold ?? 'N/A'}, Contrast=${params.contrast ?? 'Original'}, Inverted=${params.inverted ?? false}, Sharpen=${params.sharpen ?? false}`);
       }
     }
 
@@ -309,7 +477,7 @@ export async function extractQrFromImage(input: string): Promise<string> {
       if (zxingResult) {
         qrData = zxingResult.result;
         const params = variations[zxingResult.index].params;
-        console.log(`Success: QR extracted using ZXing (TRY_HARDER) on variation ${zxingResult.index}: Scale=${params.scale}, Rotation=${params.rotation}, Threshold=${params.threshold ?? 'N/A'}`);
+        console.log(`Success: QR extracted using ZXing (TRY_HARDER) on variation ${zxingResult.index}: Scale=${params.scale}, Rotation=${params.rotation}, Threshold=${params.threshold ?? 'N/A'}, Contrast=${params.contrast ?? 'Original'}, Inverted=${params.inverted ?? false}, Sharpen=${params.sharpen ?? false}`);
       }
     }
 
