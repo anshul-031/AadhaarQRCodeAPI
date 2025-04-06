@@ -141,16 +141,26 @@ async function detectQRCodeWithZXing(element: HTMLImageElement | HTMLCanvasEleme
   return null;
 }
 
-async function processInParallel<T>(items: T[], processor: (item: T) => Promise<string | null>): Promise<string | null> {
+async function processInParallel<T>(
+  items: T[],
+  processor: (item: T) => Promise<string | null>
+): Promise<{ result: string, index: number } | null> {
   const chunkSize = 5; // Process 5 items at a time to avoid overwhelming
   
   for (let i = 0; i < items.length; i += chunkSize) {
     const chunk = items.slice(i, i + chunkSize);
-    const results = await Promise.all(chunk.map(item => processor(item)));
+    // Map processor calls to include the original index relative to the start of the chunk
+    const processingPromises = chunk.map((item, chunkIndex) =>
+      processor(item).then(result => ({ result, index: i + chunkIndex }))
+    );
     
-    const validResult = results.find(r => r !== null);
-    if (validResult) {
-      return validResult;
+    const results = await Promise.all(processingPromises);
+    
+    // Find the first successful result in the chunk
+    const validResult = results.find(r => r.result !== null);
+    if (validResult && validResult.result) {
+      // Ensure result is not null before returning
+      return { result: validResult.result, index: validResult.index };
     }
   }
   
@@ -235,10 +245,16 @@ export async function extractQrFromImage(input: string): Promise<string> {
     // Try original image first with jsQR since it's more reliable
     const imgData = new ImageData(img.width, img.height);
     qrData = await detectQRCodeWithJsQR(imgData);
+    if (qrData) {
+      console.log('QR extracted using jsQR on original image.');
+    }
     
     if (!qrData) {
       // Try ZXing on original image
       qrData = await detectQRCodeWithZXing(img);
+      if (qrData) {
+        console.log('QR extracted using ZXing on original image.');
+      }
       
       if (!qrData) {
         // Generate all variations
@@ -246,17 +262,29 @@ export async function extractQrFromImage(input: string): Promise<string> {
         console.log(`Processing ${variations.length} different image variations in parallel`);
         
         // Try jsQR in parallel
-        qrData = await processInParallel(
-          variations.map(v => v.imageData),
-          detectQRCodeWithJsQR
+        const jsQRResult = await processInParallel(
+          variations,
+          (variation) => detectQRCodeWithJsQR(variation.imageData)
         );
+        
+        if (jsQRResult) {
+          qrData = jsQRResult.result;
+          const params = variations[jsQRResult.index].params;
+          console.log(`QR extracted using jsQR on variation ${jsQRResult.index}: Scale=${params.scale}, Rotation=${params.rotation}, Threshold=${params.threshold ?? 'N/A'}`);
+        }
         
         // If jsQR failed, try ZXing in parallel
         if (!qrData) {
-          qrData = await processInParallel(
-            variations.map(v => v.canvas),
-            detectQRCodeWithZXing
+          const zxingResult = await processInParallel(
+            variations,
+            (variation) => detectQRCodeWithZXing(variation.canvas)
           );
+          
+          if (zxingResult) {
+            qrData = zxingResult.result;
+            const params = variations[zxingResult.index].params;
+            console.log(`QR extracted using ZXing on variation ${zxingResult.index}: Scale=${params.scale}, Rotation=${params.rotation}, Threshold=${params.threshold ?? 'N/A'}`);
+          }
         }
       }
     }
