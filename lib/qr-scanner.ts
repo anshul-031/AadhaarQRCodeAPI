@@ -1,4 +1,5 @@
 import { BrowserQRCodeReader } from '@zxing/browser';
+import { DecodeHintType } from '@zxing/library';
 import jsQR from 'jsqr';
 
 interface DetectionResult {
@@ -121,7 +122,9 @@ async function detectQRCodeWithJsQR(imageData: ImageData): Promise<string | null
 }
 
 async function detectQRCodeWithZXing(element: HTMLImageElement | HTMLCanvasElement): Promise<string | null> {
-  const codeReader = new BrowserQRCodeReader();
+  const hints = new Map();
+  hints.set(DecodeHintType.TRY_HARDER, true);
+  const codeReader = new BrowserQRCodeReader(hints);
   
   try {
     let result;
@@ -242,50 +245,71 @@ export async function extractQrFromImage(input: string): Promise<string> {
     });
     console.log('Image loaded successfully:', img.width, 'x', img.height);
 
-    // Try original image first with jsQR since it's more reliable
-    const imgData = new ImageData(img.width, img.height);
-    qrData = await detectQRCodeWithJsQR(imgData);
-    if (qrData) {
-      console.log('QR extracted using jsQR on original image.');
+    // --- Detection Strategy ---
+    // 1. Try jsQR on original image (often faster)
+    console.log('Attempt 1: jsQR on original image');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0, img.width, img.height);
+      try {
+        const originalImageData = ctx.getImageData(0, 0, img.width, img.height);
+        qrData = await detectQRCodeWithJsQR(originalImageData);
+        if (qrData) {
+          console.log('Success: QR extracted using jsQR on original image.');
+        }
+      } catch (e) {
+        console.warn('Could not get ImageData for jsQR:', e);
+      }
+    } else {
+      console.warn('Could not get canvas context for jsQR');
     }
-    
+
+
+    // 2. Try ZXing (with TRY_HARDER) on original image
     if (!qrData) {
-      // Try ZXing on original image
+      console.log('Attempt 2: ZXing (TRY_HARDER) on original image');
       qrData = await detectQRCodeWithZXing(img);
       if (qrData) {
-        console.log('QR extracted using ZXing on original image.');
+        console.log('Success: QR extracted using ZXing (TRY_HARDER) on original image.');
       }
+    }
+
+    // 3. If still not found, generate variations and try jsQR
+    if (!qrData) {
+      console.log('Attempt 3: Generating variations for jsQR');
+      const variations = await preprocessImageData(img);
+      console.log(`Processing ${variations.length} variations with jsQR in parallel`);
+      const jsQRResult = await processInParallel(
+        variations,
+        (variation) => detectQRCodeWithJsQR(variation.imageData)
+      );
       
-      if (!qrData) {
-        // Generate all variations
-        const variations = await preprocessImageData(img);
-        console.log(`Processing ${variations.length} different image variations in parallel`);
-        
-        // Try jsQR in parallel
-        const jsQRResult = await processInParallel(
-          variations,
-          (variation) => detectQRCodeWithJsQR(variation.imageData)
-        );
-        
-        if (jsQRResult) {
-          qrData = jsQRResult.result;
-          const params = variations[jsQRResult.index].params;
-          console.log(`QR extracted using jsQR on variation ${jsQRResult.index}: Scale=${params.scale}, Rotation=${params.rotation}, Threshold=${params.threshold ?? 'N/A'}`);
-        }
-        
-        // If jsQR failed, try ZXing in parallel
-        if (!qrData) {
-          const zxingResult = await processInParallel(
-            variations,
-            (variation) => detectQRCodeWithZXing(variation.canvas)
-          );
-          
-          if (zxingResult) {
-            qrData = zxingResult.result;
-            const params = variations[zxingResult.index].params;
-            console.log(`QR extracted using ZXing on variation ${zxingResult.index}: Scale=${params.scale}, Rotation=${params.rotation}, Threshold=${params.threshold ?? 'N/A'}`);
-          }
-        }
+      if (jsQRResult) {
+        qrData = jsQRResult.result;
+        const params = variations[jsQRResult.index].params;
+        console.log(`Success: QR extracted using jsQR on variation ${jsQRResult.index}: Scale=${params.scale}, Rotation=${params.rotation}, Threshold=${params.threshold ?? 'N/A'}`);
+      }
+    }
+
+    // 4. If still not found, try ZXing (with TRY_HARDER) on variations
+    if (!qrData) {
+      console.log('Attempt 4: Trying variations with ZXing (TRY_HARDER)');
+      // Re-use variations if already generated, otherwise generate them
+      // Note: This assumes variations are needed, might need regeneration if context lost
+      const variations = await preprocessImageData(img); // Regenerate just in case
+      console.log(`Processing ${variations.length} variations with ZXing (TRY_HARDER) in parallel`);
+      const zxingResult = await processInParallel(
+        variations,
+        (variation) => detectQRCodeWithZXing(variation.canvas)
+      );
+      
+      if (zxingResult) {
+        qrData = zxingResult.result;
+        const params = variations[zxingResult.index].params;
+        console.log(`Success: QR extracted using ZXing (TRY_HARDER) on variation ${zxingResult.index}: Scale=${params.scale}, Rotation=${params.rotation}, Threshold=${params.threshold ?? 'N/A'}`);
       }
     }
 
