@@ -81,7 +81,7 @@ export async function parseAadhaarQr(qrData: string): Promise<AadhaarData> {
           mobile_number: ''
         };
       } else {
-        const root = result.QPD || {};
+        const root = result.QPDA || result.QPDB || {};
         return {
           name: root['@_n'] || '',
           gender: root['@_g'] || '',
