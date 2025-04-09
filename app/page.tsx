@@ -9,7 +9,7 @@ import { Loader2, QrCode, Upload, Camera, Search, ScanLine } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Webcam from 'react-webcam';
-import { extractQrFromImage, extractQrFromVideo } from '@/lib/qr-scanner';
+import { extractQrFromImage } from '@/lib/qr-scanner';
 import { AadhaarData } from '@/lib/aadhaar-processor';
 
 interface ScannerDevice {

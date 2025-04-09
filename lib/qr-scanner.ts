@@ -1,291 +1,13 @@
-// Import existing libraries
-import { BrowserQRCodeReader } from '@zxing/browser';
-import { DecodeHintType } from '@zxing/library';
-import jsQR from 'jsqr';
-
 // Import Dynamsoft configuration (this ensures the license is initialized)
 import './dynamsoft-config'; // Make sure this path is correct relative to qr-scanner.ts
+
 
 // Import Dynamsoft modules
 import { CaptureVisionRouter } from "dynamsoft-capture-vision-router";
 import { BarcodeResultItem, EnumBarcodeFormat } from "dynamsoft-barcode-reader";
 import { EnumCapturedResultItemType } from "dynamsoft-core";
 
-// --- Keep existing interfaces and helper functions for fallback ---
-interface DetectionResult {
-  method: string;
-  scale?: number;
-  rotation?: number;
-  threshold?: number;
-  contrast?: number;
-  inverted?: boolean;
-  sharpen?: boolean;
-  success: boolean;
-}
-
-interface VariationParams {
- scale: number;
- rotation: number;
- threshold?: number;
- contrast?: number;
- inverted?: boolean;
- sharpen?: boolean;
-}
-
-function binarizeImageData(imageData: ImageData, threshold: number): ImageData {
-  const newImageData = new ImageData(
-    new Uint8ClampedArray(imageData.data),
-    imageData.width,
-    imageData.height
-  );
-  for (let i = 0; i < newImageData.data.length; i += 4) {
-    const avg = (newImageData.data[i] + newImageData.data[i + 1] + newImageData.data[i + 2]) / 3;
-    const val = avg < threshold ? 0 : 255;
-    newImageData.data[i] = val;
-    newImageData.data[i + 1] = val;
-    newImageData.data[i + 2] = val;
-  }
-  return newImageData;
-}
-
-function adjustContrast(imageData: ImageData, factor: number): ImageData {
-  const data = new Uint8ClampedArray(imageData.data);
-  const width = imageData.width;
-  const height = imageData.height;
-  const newImageData = new ImageData(data, width, height);
-  const contrastFactor = factor;
-  for (let i = 0; i < data.length; i += 4) {
-    data[i] = Math.max(0, Math.min(255, contrastFactor * (data[i] - 128) + 128));
-    data[i + 1] = Math.max(0, Math.min(255, contrastFactor * (data[i + 1] - 128) + 128));
-    data[i + 2] = Math.max(0, Math.min(255, contrastFactor * (data[i + 2] - 128) + 128));
-  }
-  return newImageData;
-}
-
-const sharpeningKernel = [
-  [ 0, -1,  0],
-  [-1,  5, -1],
-  [ 0, -1,  0]
-];
-
-function applyConvolution(imageData: ImageData, kernel: number[][]): ImageData {
-  const srcData = imageData.data;
-  const width = imageData.width;
-  const height = imageData.height;
-  const src = new Uint8ClampedArray(srcData);
-  const dst = new Uint8ClampedArray(srcData.length);
-  const kernelSize = kernel.length;
-  const halfKernel = Math.floor(kernelSize / 2);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      let r = 0, g = 0, b = 0;
-      for (let ky = 0; ky < kernelSize; ky++) {
-        for (let kx = 0; kx < kernelSize; kx++) {
-          const imgY = Math.min(height - 1, Math.max(0, y + ky - halfKernel));
-          const imgX = Math.min(width - 1, Math.max(0, x + kx - halfKernel));
-          const weight = kernel[ky][kx];
-          const offset = (imgY * width + imgX) * 4;
-          r += src[offset] * weight;
-          g += src[offset + 1] * weight;
-          b += src[offset + 2] * weight;
-        }
-      }
-      const dstOffset = (y * width + x) * 4;
-      dst[dstOffset] = Math.max(0, Math.min(255, r));
-      dst[dstOffset + 1] = Math.max(0, Math.min(255, g));
-      dst[dstOffset + 2] = Math.max(0, Math.min(255, b));
-      dst[dstOffset + 3] = src[dstOffset + 3];
-    }
-  }
-  return new ImageData(dst, width, height);
-}
-
-function sharpenImageData(imageData: ImageData): ImageData {
-    return applyConvolution(imageData, sharpeningKernel);
-}
-
-type ProcessedVariation = {
-  imageData: ImageData;
-  canvas: HTMLCanvasElement;
-  params: VariationParams;
-};
-
-function generateSubVariations(
-  imageData: ImageData,
-  canvas: HTMLCanvasElement,
-  params: VariationParams,
-  thresholds: number[],
-  results: ProcessedVariation[]
-) {
-  const width = imageData.width;
-  const height = imageData.height;
-  results.push({ imageData, canvas, params });
-  for (const threshold of thresholds) {
-    const binarizedData = binarizeImageData(imageData, threshold);
-    const binarizedCanvas = document.createElement('canvas');
-    binarizedCanvas.width = width;
-    binarizedCanvas.height = height;
-    const binarizedCtx = binarizedCanvas.getContext('2d');
-    if (binarizedCtx) {
-      binarizedCtx.putImageData(binarizedData, 0, 0);
-      results.push({
-        imageData: binarizedData,
-        canvas: binarizedCanvas,
-        params: { ...params, threshold }
-      });
-    }
-  }
-  const invertedData = new ImageData(new Uint8ClampedArray(imageData.data), width, height);
-  for (let i = 0; i < invertedData.data.length; i += 4) {
-    invertedData.data[i] = 255 - invertedData.data[i];
-    invertedData.data[i + 1] = 255 - invertedData.data[i + 1];
-    invertedData.data[i + 2] = 255 - invertedData.data[i + 2];
-  }
-  const invertedCanvas = document.createElement('canvas');
-  invertedCanvas.width = width;
-  invertedCanvas.height = height;
-  const invertedCtx = invertedCanvas.getContext('2d');
-  if (invertedCtx) {
-    invertedCtx.putImageData(invertedData, 0, 0);
-    results.push({
-      imageData: invertedData,
-      canvas: invertedCanvas,
-      params: { ...params, inverted: true }
-    });
-  }
-}
-
-function addVariations(
-  baseImageData: ImageData,
-  baseCanvas: HTMLCanvasElement,
-  baseParams: { scale: number, rotation: number, contrast?: number },
-  thresholds: number[],
-  results: ProcessedVariation[]
-) {
-  generateSubVariations(baseImageData, baseCanvas, baseParams, thresholds, results);
-  try {
-    const sharpenedImageData = sharpenImageData(baseImageData);
-    const sharpenedCanvas = document.createElement('canvas');
-    sharpenedCanvas.width = baseImageData.width;
-    sharpenedCanvas.height = baseImageData.height;
-    const sharpenedCtx = sharpenedCanvas.getContext('2d');
-    if (sharpenedCtx) {
-      sharpenedCtx.putImageData(sharpenedImageData, 0, 0);
-      generateSubVariations(sharpenedImageData, sharpenedCanvas, { ...baseParams, sharpen: true }, thresholds, results);
-    }
-  } catch (e) {
-      console.error("Error applying sharpening:", e);
-  }
-}
-
-async function preprocessImageData(img: HTMLImageElement): Promise<ProcessedVariation[]> {
-  console.log('Preprocessing image:', img.width, 'x', img.height);
-  const results: ProcessedVariation[] = [];
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) {
-    console.error('Failed to get canvas context');
-    return results;
-  }
-  const scales = [1, 0.5, 2, 0.75, 1.5];
-  const rotations = [0, 90, 180, 270];
-  const thresholds = [128, 100, 150, 180];
-  const contrastFactors = [1.5, 2.0];
-  for (const scale of scales) {
-    const width = Math.floor(img.width * scale);
-    const height = Math.floor(img.height * scale);
-    if (width <= 0 || height <= 0) continue;
-    canvas.width = width;
-    canvas.height = height;
-    for (const rotation of rotations) {
-      ctx.clearRect(0, 0, width, height);
-      ctx.save();
-      ctx.translate(width/2, height/2);
-      ctx.rotate((rotation * Math.PI) / 180);
-      ctx.drawImage(img, -width/2, -height/2, width, height);
-      ctx.restore();
-      try {
-        const originalImageData = ctx.getImageData(0, 0, width, height);
-        const originalCanvasClone = canvas.cloneNode(true) as HTMLCanvasElement;
-        addVariations(originalImageData, originalCanvasClone, { scale, rotation }, thresholds, results);
-        for (const factor of contrastFactors) {
-          const contrastedImageData = adjustContrast(originalImageData, factor);
-          const contrastedCanvas = document.createElement('canvas');
-          contrastedCanvas.width = width;
-          contrastedCanvas.height = height;
-          const contrastedCtx = contrastedCanvas.getContext('2d');
-          if (contrastedCtx) {
-            contrastedCtx.putImageData(contrastedImageData, 0, 0);
-            addVariations(contrastedImageData, contrastedCanvas, { scale, rotation, contrast: factor }, thresholds, results);
-          }
-        }
-      } catch (e) {
-        if (e instanceof DOMException && e.name === 'SecurityError') {
-          console.warn(`SecurityError processing variation (Scale=${scale}, Rotation=${rotation}). Skipping.`);
-        } else {
-          console.error(`Error processing image variation (Scale=${scale}, Rotation=${rotation}):`, e);
-        }
-      }
-    }
-  }
-  console.log(`Generated ${results.length} image variations (incl. contrast/sharpening adjustments)`);
-  return results;
-}
-
-async function detectQRCodeWithJsQR(imageData: ImageData): Promise<string | null> {
-  try {
-    const code = jsQR(
-      new Uint8ClampedArray(imageData.data.buffer),
-      imageData.width,
-      imageData.height,
-      { inversionAttempts: "attemptBoth" }
-    );
-    if (code) return code.data;
-    return null;
-  } catch (e) {
-    console.error('jsQR detection error:', e);
-    return null;
-  }
-}
-
-async function detectQRCodeWithZXing(element: HTMLImageElement | HTMLCanvasElement): Promise<string | null> {
-  const hints = new Map();
-  hints.set(DecodeHintType.TRY_HARDER, true);
-  const codeReader = new BrowserQRCodeReader(hints);
-  try {
-    let result;
-    if (element instanceof HTMLCanvasElement) {
-      result = await codeReader.decodeFromCanvas(element);
-    } else {
-      result = await codeReader.decodeFromImageElement(element);
-    }
-    if (result) return result.getText();
-  } catch (e) {
-    if (!(e instanceof Error && e.name === 'NotFoundException')) {
-       console.error('ZXing detection error:', e);
-    }
-  }
-  return null;
-}
-
-async function processInParallel<T>(
-  items: T[],
-  processor: (item: T) => Promise<string | null>
-): Promise<{ result: string, index: number } | null> {
-  const chunkSize = 5;
-  for (let i = 0; i < items.length; i += chunkSize) {
-    const chunk = items.slice(i, i + chunkSize);
-    const processingPromises = chunk.map((item, chunkIndex) =>
-      processor(item).then(result => ({ result, index: i + chunkIndex }))
-    );
-    const results = await Promise.all(processingPromises);
-    const validResult = results.find(r => r.result !== null);
-    if (validResult && validResult.result) {
-      return { result: validResult.result, index: validResult.index };
-    }
-  }
-  return null;
-}
+// Removed interfaces and helper functions related to jsQR/ZXing fallbacks
 
 // --- New Dynamsoft Detection Function ---
 let cvRouterInstance: CaptureVisionRouter | null = null;
@@ -301,23 +23,442 @@ async function getDynamsoftRouter(): Promise<CaptureVisionRouter> {
     try {
       cvRouterInstance = await cvRouterPromise;
       console.log("Dynamsoft CaptureVisionRouter instance created.");
-      // Configure for QR codes, potentially optimizing for speed/accuracy
-      // Using 'ReadBarcodes_SpeedFirst' or 'ReadBarcodes_ReadRateFirst' might be good starting points
-      // Or define custom settings
-      // Simplify settings: Use default templates or minimal overrides if needed.
-      // For now, let's try initializing with minimal settings or even skip custom initSettings
-      // if the default behavior is sufficient. Let's try skipping it first.
-      // If issues persist, we can try a minimal initSettings like:
-      /*
-      await cvRouterInstance.initSettings({
-          "CaptureVisionTemplates": [{ "Name": "Default" }], // Reference a potentially default template
-          "TargetROIDefOptions": [], // Keep empty if using defaults
-          "BarcodeReaderTaskSettingOptions": [] // Keep empty if using defaults
-      });
-      */
-      // For now, assume default settings are okay after createInstance()
-      console.log("Skipping custom initSettings, relying on Dynamsoft defaults.");
-      console.log("Dynamsoft CaptureVisionRouter settings initialized.");
+
+      // Apply the custom settings provided by the user
+      const dynamsoftSettingsJson = `{
+          "BarcodeReaderTaskSettingOptions" :
+          [
+              {
+                  "BarcodeColourModes" : null,
+                  "BarcodeComplementModes" :
+                  [
+                      {
+                          "Mode" : "BCM_SKIP"
+                      }
+                  ],
+                  "BarcodeFormatIds" :
+                  [
+                      "BF_QR_CODE",
+                      "BF_MICRO_QR"
+                  ],
+                  "BaseBarcodeReaderTaskSettingName" : "",
+                  "DPMCodeReadingModes" :
+                  [
+                      {
+                          "BarcodeFormat" : "BF_DATAMATRIX",
+                          "Mode" : "DPMCRM_SKIP"
+                      }
+                  ],
+                  "DeblurModes" : null,
+                  "DeformationResistingModes" :
+                  [
+                      {
+                          "BinarizationMode" :
+                          {
+                              "BinarizationThreshold" : -1,
+                              "BlockSizeX" : 0,
+                              "BlockSizeY" : 0,
+                              "EnableFillBinaryVacancy" : 1,
+                              "GrayscaleEnhancementModesIndex" : -1,
+                              "Mode" : "BM_LOCAL_BLOCK",
+                              "MorphOperation" : "Close",
+                              "MorphOperationKernelSizeX" : -1,
+                              "MorphOperationKernelSizeY" : -1,
+                              "MorphShape" : "Rectangle",
+                              "ThresholdCompensation" : 10
+                          },
+                          "GrayscaleEnhancementMode" :
+                          {
+                              "Mode" : "GEM_AUTO",
+                              "Sensitivity" : -1,
+                              "SharpenBlockSizeX" : -1,
+                              "SharpenBlockSizeY" : -1,
+                              "SmoothBlockSizeX" : -1,
+                              "SmoothBlockSizeY" : -1
+                          },
+                          "Level" : 5,
+                          "Mode" : "DRM_SKIP"
+                      }
+                  ],
+                  "ExpectedBarcodesCount" : 0,
+                  "LocalizationModes" :
+                  [
+                      {
+                          "ConfidenceThreshold" : 60,
+                          "IsOneDStacked" : 0,
+                          "Mode" : "LM_CONNECTED_BLOCKS",
+                          "ModuleSize" : 0,
+                          "ScanDirection" : 0,
+                          "ScanStride" : 0
+                      },
+                      {
+                          "ConfidenceThreshold" : 60,
+                          "IsOneDStacked" : 0,
+                          "Mode" : "LM_SCAN_DIRECTLY",
+                          "ModuleSize" : 0,
+                          "ScanDirection" : 0,
+                          "ScanStride" : 0
+                      },
+                      {
+                          "ConfidenceThreshold" : 60,
+                          "IsOneDStacked" : 0,
+                          "Mode" : "LM_STATISTICS",
+                          "ModuleSize" : 0,
+                          "ScanDirection" : 0,
+                          "ScanStride" : 0
+                      },
+                      {
+                          "ConfidenceThreshold" : 60,
+                          "IsOneDStacked" : 0,
+                          "Mode" : "LM_LINES",
+                          "ModuleSize" : 0,
+                          "ScanDirection" : 0,
+                          "ScanStride" : 0
+                      }
+                  ],
+                  "MaxThreadsInOneTask" : 4,
+                  "Name" : "BR_1",
+                  "ReturnBarcodeZoneClarity" : 0,
+                  "SectionImageParameterArray" :
+                  [
+                      {
+                          "ContinueWhenPartialResultsGenerated" : 1,
+                          "ImageParameterName" : "IP_1",
+                          "Section" : "ST_REGION_PREDETECTION"
+                      },
+                      {
+                          "ContinueWhenPartialResultsGenerated" : 1,
+                          "ImageParameterName" : "IP_1",
+                          "Section" : "ST_BARCODE_LOCALIZATION"
+                      },
+                      {
+                          "ContinueWhenPartialResultsGenerated" : 1,
+                          "ImageParameterName" : "IP_Decode",
+                          "Section" : "ST_BARCODE_DECODING"
+                      }
+                  ],
+                  "StartSection" : "ST_REGION_PREDETECTION",
+                  "TerminateSetting" :
+                  {
+                      "Section" : "ST_NULL",
+                      "Stage" : "IRUT_NULL"
+                  },
+                  "TextResultOrderModes" :
+                  [
+                      {
+                          "Mode" : "TROM_CONFIDENCE"
+                      },
+                      {
+                          "Mode" : "TROM_POSITION"
+                      },
+                      {
+                          "Mode" : "TROM_FORMAT"
+                      }
+                  ]
+              }
+          ],
+          "CaptureVisionTemplates" :
+          [
+              {
+                  "ImageROIProcessingNameArray" :
+                  [
+                      "roi_default"
+                  ],
+                  "ImageSource" : "",
+                  "MaxParallelTasks" : 4,
+                  "MinImageCaptureInterval" : 0,
+                  "Name" : "Default_1",
+                  "OutputOriginalImage" : 0,
+                  "SemanticProcessingNameArray" : null,
+                  "Timeout" : 100000
+              }
+          ],
+          "GlobalParameter" :
+          {
+              "MaxTotalImageDimension" : 0
+          },
+          "ImageParameterOptions" :
+          [
+              {
+                  "BaseImageParameterName" : "",
+                  "BinarizationModes" :
+                  [
+                      {
+                          "BinarizationThreshold" : -1,
+                          "BlockSizeX" : 0,
+                          "BlockSizeY" : 0,
+                          "EnableFillBinaryVacancy" : 1,
+                          "GrayscaleEnhancementModesIndex" : -1,
+                          "Mode" : "BM_LOCAL_BLOCK",
+                          "MorphOperation" : "Close",
+                          "MorphOperationKernelSizeX" : -1,
+                          "MorphOperationKernelSizeY" : -1,
+                          "MorphShape" : "Rectangle",
+                          "ThresholdCompensation" : 10
+                      }
+                  ],
+                  "ColourConversionModes" :
+                  [
+                      {
+                          "BlueChannelWeight" : -1,
+                          "GreenChannelWeight" : -1,
+                          "Mode" : "CICM_GENERAL",
+                          "RedChannelWeight" : -1,
+                          "ReferChannel" : "H_CHANNEL"
+                      }
+                  ],
+                  "GrayscaleEnhancementModes" :
+                  [
+                      {
+                          "Mode" : "GEM_GENERAL",
+                          "Sensitivity" : -1,
+                          "SharpenBlockSizeX" : -1,
+                          "SharpenBlockSizeY" : -1,
+                          "SmoothBlockSizeX" : -1,
+                          "SmoothBlockSizeY" : -1
+                      },
+                      {
+                          "Mode" : "GEM_GRAY_EQUALIZE",
+                          "Sensitivity" : 5,
+                          "SharpenBlockSizeX" : -1,
+                          "SharpenBlockSizeY" : -1,
+                          "SmoothBlockSizeX" : -1,
+                          "SmoothBlockSizeY" : -1
+                      },
+                      {
+                          "Mode" : "GEM_GRAY_SMOOTH",
+                          "Sensitivity" : -1,
+                          "SharpenBlockSizeX" : -1,
+                          "SharpenBlockSizeY" : -1,
+                          "SmoothBlockSizeX" : 3,
+                          "SmoothBlockSizeY" : 3
+                      }
+                  ],
+                  "GrayscaleTransformationModes" :
+                  [
+                      {
+                          "Mode" : "GTM_ORIGINAL"
+                      }
+                  ],
+                  "IfEraseTextZone" : 1,
+                  "Name" : "IP_1",
+                  "RegionPredetectionModes" :
+                  [
+                      {
+                          "AspectRatioRange" : "[]",
+                          "FindAccurateBoundary" : 0,
+                          "ForeAndBackgroundColours" : "[]",
+                          "HeightRange" : "[]",
+                          "ImageParameterName" : "",
+                          "MeasuredByPercentage" : 1,
+                          "MinImageDimension" : 262144,
+                          "Mode" : "RPM_GENERAL",
+                          "RelativeRegions" : "[]",
+                          "Sensitivity" : 1,
+                          "SpatialIndexBlockSize" : 5,
+                          "WidthRange" : "[]"
+                      }
+                  ],
+                  "ScaleDownThreshold" : 2300,
+                  "ScaleUpModes" :
+                  [
+                      {
+                          "AcuteAngleWithXThreshold" : -1,
+                          "LetterHeightThreshold" : 0,
+                          "Mode" : "SUM_AUTO",
+                          "ModuleSizeThreshold" : 0,
+                          "TargetLetterHeight" : 0,
+                          "TargetModuleSize" : 0
+                      }
+                  ],
+                  "TextDetectionMode" :
+                  {
+                      "CharHeightRange" :
+                      [
+                          1,
+                          1000,
+                          1
+                      ],
+                      "Direction" : "UNKNOWN",
+                      "MaxSpacingInALine" : -1,
+                      "Mode" : "TTDM_LINE",
+                      "Sensitivity" : 3,
+                      "StringLengthRange" : null
+                  },
+                  "TextureDetectionModes" :
+                  [
+                      {
+                          "Mode" : "TDM_GENERAL_WIDTH_CONCENTRATION",
+                          "Sensitivity" : 5
+                      }
+                  ]
+              },
+              {
+                  "BaseImageParameterName" : "",
+                  "BinarizationModes" :
+                  [
+                      {
+                          "BinarizationThreshold" : -1,
+                          "BlockSizeX" : 0,
+                          "BlockSizeY" : 0,
+                          "EnableFillBinaryVacancy" : 1,
+                          "GrayscaleEnhancementModesIndex" : -1,
+                          "Mode" : "BM_LOCAL_BLOCK",
+                          "MorphOperation" : "Close",
+                          "MorphOperationKernelSizeX" : -1,
+                          "MorphOperationKernelSizeY" : -1,
+                          "MorphShape" : "Rectangle",
+                          "ThresholdCompensation" : 10
+                      }
+                  ],
+                  "ColourConversionModes" :
+                  [
+                      {
+                          "BlueChannelWeight" : -1,
+                          "GreenChannelWeight" : -1,
+                          "Mode" : "CICM_GENERAL",
+                          "RedChannelWeight" : -1,
+                          "ReferChannel" : "H_CHANNEL"
+                      }
+                  ],
+                  "GrayscaleEnhancementModes" :
+                  [
+                      {
+                          "Mode" : "GEM_GENERAL",
+                          "Sensitivity" : -1,
+                          "SharpenBlockSizeX" : -1,
+                          "SharpenBlockSizeY" : -1,
+                          "SmoothBlockSizeX" : -1,
+                          "SmoothBlockSizeY" : -1
+                      }
+                  ],
+                  "GrayscaleTransformationModes" :
+                  [
+                      {
+                          "Mode" : "GTM_ORIGINAL"
+                      }
+                  ],
+                  "IfEraseTextZone" : 1,
+                  "Name" : "IP_Decode",
+                  "RegionPredetectionModes" :
+                  [
+                      {
+                          "AspectRatioRange" : "[]",
+                          "FindAccurateBoundary" : 0,
+                          "ForeAndBackgroundColours" : "[]",
+                          "HeightRange" : "[]",
+                          "ImageParameterName" : "",
+                          "MeasuredByPercentage" : 1,
+                          "MinImageDimension" : 262144,
+                          "Mode" : "RPM_GENERAL",
+                          "RelativeRegions" : "[]",
+                          "Sensitivity" : 1,
+                          "SpatialIndexBlockSize" : 5,
+                          "WidthRange" : "[]"
+                      }
+                  ],
+                  "ScaleDownThreshold" : 99999,
+                  "ScaleUpModes" :
+                  [
+                      {
+                          "AcuteAngleWithXThreshold" : -1,
+                          "LetterHeightThreshold" : 0,
+                          "Mode" : "SUM_AUTO",
+                          "ModuleSizeThreshold" : 0,
+                          "TargetLetterHeight" : 0,
+                          "TargetModuleSize" : 0
+                      }
+                  ],
+                  "TextDetectionMode" :
+                  {
+                      "CharHeightRange" :
+                      [
+                          1,
+                          1000,
+                          1
+                      ],
+                      "Direction" : "UNKNOWN",
+                      "MaxSpacingInALine" : -1,
+                      "Mode" : "TTDM_LINE",
+                      "Sensitivity" : 3,
+                      "StringLengthRange" : null
+                  },
+                  "TextureDetectionModes" :
+                  [
+                      {
+                          "Mode" : "TDM_GENERAL_WIDTH_CONCENTRATION",
+                          "Sensitivity" : 5
+                      }
+                  ]
+              }
+          ],
+          "TargetROIDefOptions" :
+          [
+              {
+                  "BaseTargetROIDefName" : "",
+                  "Location" :
+                  {
+                      "Offset" :
+                      {
+                          "FirstPoint" :
+                          [
+                              0,
+                              0,
+                              1,
+                              1
+                          ],
+                          "FourthPoint" :
+                          [
+                              0,
+                              100,
+                              1,
+                              1
+                          ],
+                          "MeasuredByPercentage" : 1,
+                          "ReferenceObjectOriginIndex" : 0,
+                          "ReferenceObjectType" : "ROT_ATOMIC_OBJECT",
+                          "ReferenceXAxis" :
+                          {
+                              "AxisType" : "AT_MIDPOINT_EDGE",
+                              "EdgeIndex" : 0,
+                              "LengthReference" : "LR_X",
+                              "RotationAngle" : 90
+                          },
+                          "ReferenceYAxis" :
+                          {
+                              "AxisType" : "AT_MIDPOINT_EDGE",
+                              "EdgeIndex" : 1,
+                              "LengthReference" : "LR_Y",
+                              "RotationAngle" : 90
+                          },
+                          "SecondPoint" :
+                          [
+                              100,
+                              0,
+                              1,
+                              1
+                          ],
+                          "ThirdPoint" :
+                          [
+                              100,
+                              100,
+                              1,
+                              1
+                          ]
+                      }
+                  },
+                  "Name" : "roi_default",
+                  "PauseFlag" : 0,
+                  "TaskSettingNameArray" :
+                  [
+                      "BR_1"
+                  ]
+              }
+          ]
+      }`;
+      const settingsObject = JSON.parse(dynamsoftSettingsJson);
+      await cvRouterInstance.initSettings(settingsObject);
+      console.log("Dynamsoft CaptureVisionRouter settings initialized from parsed custom JSON object.");
     } catch (error) {
       console.error("Failed to create or configure Dynamsoft Router:", error);
       cvRouterPromise = null; // Reset promise if creation failed
@@ -335,31 +476,30 @@ async function detectQRCodeWithDynamsoft(input: string | HTMLImageElement | HTML
     const cvRouter = await getDynamsoftRouter();
     let resultText: string | null = null;
 
-    // Try templates in order: Speed -> Balance -> Accuracy
-    // Use standard Dynamsoft template names known to work
-    const templates = ["ReadBarcodes_SpeedFirst", "ReadBarcodes_ReadRateFirst", "ReadBarcodes_Balance"];
+    // Use the template name defined in the custom settings JSON ("Default_1")
+    const templateName = "Default_1";
+    console.log(`Attempting Dynamsoft detection with template: ${templateName}`);
+    const startTime = performance.now();
+    const result = await cvRouter.capture(input, templateName);
+    const endTime = performance.now();
+    console.log(`Dynamsoft capture (${templateName}) took: ${(endTime - startTime).toFixed(2)} ms`);
 
-    for (const template of templates) {
-        console.log(`Attempting Dynamsoft detection with template: ${template}`);
-        const startTime = performance.now();
-        const result = await cvRouter.capture(input, template);
-        const endTime = performance.now();
-        console.log(`Dynamsoft capture (${template}) took: ${(endTime - startTime).toFixed(2)} ms`);
-
-        if (result.items.length > 0) {
-            for (let item of result.items) {
-                if (item.type === EnumCapturedResultItemType.CRIT_BARCODE) {
-                    const barcodeItem = item as BarcodeResultItem;
-                    // Check if it's a QR code (though template should filter)
-                    if (barcodeItem.format === EnumBarcodeFormat.BF_QR_CODE) {
-                        resultText = barcodeItem.text;
-                        console.log(`Success: QR extracted using Dynamsoft (${template}).`);
-                        break; // Found a QR code, stop trying templates
-                    }
+    if (result.items.length > 0) {
+        for (let item of result.items) {
+            if (item.type === EnumCapturedResultItemType.CRIT_BARCODE) {
+                const barcodeItem = item as BarcodeResultItem;
+                // Check if it's a QR code (though template should filter)
+                if (barcodeItem.format === EnumBarcodeFormat.BF_QR_CODE || barcodeItem.format === EnumBarcodeFormat.BF_MICRO_QR) {
+                    resultText = barcodeItem.text;
+                    console.log(`Success: QR extracted using Dynamsoft (${templateName}).`);
+                    break; // Found a QR code, stop processing items
                 }
             }
         }
-        if (resultText) break; // Exit outer loop if found
+    }
+
+    if (!resultText) {
+        console.log(`Dynamsoft did not find a QR code using template ${templateName}.`);
     }
 
     return resultText;
@@ -376,11 +516,10 @@ async function detectQRCodeWithDynamsoft(input: string | HTMLImageElement | HTML
   }
 }
 
-// --- Modified Extraction Function ---
+// --- Simplified Extraction Function (Dynamsoft Only) ---
 export async function extractQrFromImage(input: string): Promise<string> {
-  console.log('Starting QR extraction from image (Dynamsoft Primary)');
+  console.log('Starting QR extraction from image (Dynamsoft Only)');
   let qrData: string | null = null;
-  let errorOccurred: Error | null = null;
 
   // If input is already QR data (not an image), return it as is
   if (!input.startsWith('data:image') && !input.startsWith('iVBOR')) {
@@ -388,9 +527,8 @@ export async function extractQrFromImage(input: string): Promise<string> {
     return input;
   }
 
-  // --- Strategy ---
-  // 1. Try Dynamsoft (handles base64/data URLs directly)
-  console.log('Attempt 1: Dynamsoft');
+  // --- Strategy: Use Dynamsoft with custom settings ---
+  console.log('Attempting QR detection with Dynamsoft...');
   try {
     qrData = await detectQRCodeWithDynamsoft(input);
     if (qrData) {
@@ -400,90 +538,21 @@ export async function extractQrFromImage(input: string): Promise<string> {
     }
   } catch (e: any) {
     console.error('Error during Dynamsoft detection attempt:', e);
-    errorOccurred = e; // Store error for potential fallback decision
     // Check if it's a license issue or critical failure
     if (e.message && (e.message.includes("License") || e.message.includes("expired") || e.message.includes("Failed to create"))) {
-        console.warn("Critical Dynamsoft error or license issue. Proceeding to fallback.");
+        console.error("Critical Dynamsoft error or license issue. Cannot proceed.");
+        // Re-throw the critical error
+        throw new Error(`Critical Dynamsoft error: ${e.message}`);
     } else {
-        // Non-critical error, maybe just didn't find QR. Fallback will run anyway if qrData is null.
+        // Non-critical error, likely just didn't find QR. Will throw generic error below.
     }
   }
 
-  // 2. Fallback to original jsQR/ZXing logic if Dynamsoft failed
+  // If Dynamsoft failed to find a QR code
   if (!qrData) {
-    console.log('Attempt 2: Fallback to jsQR/ZXing');
-    try {
-      const img = document.createElement('img');
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = reject;
-        img.src = input.startsWith('data:') ? input : `data:image/jpeg;base64,${input}`;
-      });
-      console.log('Fallback: Image loaded successfully:', img.width, 'x', img.height);
-
-      // 2a. Try jsQR on original
-      console.log('Fallback Attempt 2a: jsQR on original image');
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.drawImage(img, 0, 0, img.width, img.height);
-        try {
-          const originalImageData = ctx.getImageData(0, 0, img.width, img.height);
-          qrData = await detectQRCodeWithJsQR(originalImageData);
-          if (qrData) console.log('Fallback Success: QR extracted using jsQR on original image.');
-        } catch (e) { console.warn('Fallback: Could not get ImageData for jsQR:', e); }
-      } else { console.warn('Fallback: Could not get canvas context for jsQR'); }
-
-      // 2b. Try ZXing on original
-      if (!qrData) {
-        console.log('Fallback Attempt 2b: ZXing (TRY_HARDER) on original image');
-        qrData = await detectQRCodeWithZXing(img);
-        if (qrData) console.log('Fallback Success: QR extracted using ZXing (TRY_HARDER) on original image.');
-      }
-
-      // 2c. Generate variations and try jsQR
-      if (!qrData) {
-        console.log('Fallback Attempt 2c: Generating variations for jsQR');
-        const variations = await preprocessImageData(img);
-        console.log(`Fallback: Processing ${variations.length} variations with jsQR in parallel`);
-        const jsQRResult = await processInParallel(variations, (v) => detectQRCodeWithJsQR(v.imageData));
-        if (jsQRResult) {
-          qrData = jsQRResult.result;
-          const params = variations[jsQRResult.index].params;
-          console.log(`Fallback Success: QR extracted using jsQR on variation ${jsQRResult.index}: Scale=${params.scale}, Rot=${params.rotation}, Thr=${params.threshold ?? 'N/A'}, Contr=${params.contrast ?? 'Orig'}, Inv=${params.inverted ?? false}, Sharp=${params.sharpen ?? false}`);
-        }
-      }
-
-      // 2d. Try ZXing on variations
-      if (!qrData) {
-        console.log('Fallback Attempt 2d: Trying variations with ZXing (TRY_HARDER)');
-        const variations = await preprocessImageData(img); // Regenerate just in case
-        console.log(`Fallback: Processing ${variations.length} variations with ZXing (TRY_HARDER) in parallel`);
-        const zxingResult = await processInParallel(variations, (v) => detectQRCodeWithZXing(v.canvas));
-        if (zxingResult) {
-          qrData = zxingResult.result;
-          const params = variations[zxingResult.index].params;
-          console.log(`Fallback Success: QR extracted using ZXing (TRY_HARDER) on variation ${zxingResult.index}: Scale=${params.scale}, Rot=${params.rotation}, Thr=${params.threshold ?? 'N/A'}, Contr=${params.contrast ?? 'Orig'}, Inv=${params.inverted ?? false}, Sharp=${params.sharpen ?? false}`);
-        }
-      }
-    } catch (fallbackError: any) {
-        console.error('Error during fallback QR extraction:', fallbackError);
-        // If Dynamsoft also failed, throw the original error or a combined one
-        if (errorOccurred) {
-            throw new Error(`Primary (Dynamsoft) failed: ${errorOccurred.message}. Fallback also failed: ${fallbackError.message}`);
-        } else {
-            throw fallbackError; // Throw the fallback error
-        }
-    }
-  } // End of fallback logic
-
-  if (!qrData) {
-    // If we reach here, neither Dynamsoft nor the fallback found a QR code
-    const finalError = errorOccurred ? `Primary attempt failed (${errorOccurred.message}) and fallback failed.` : 'Could not detect QR code in image using any method.';
+    const finalError = 'Could not detect QR code in image using Dynamsoft with the provided settings.';
     console.error(finalError);
-    throw new Error('Could not detect QR code in image. Please ensure the image is clear and properly cropped around the QR code.');
+    throw new Error(finalError + ' Please ensure the image is clear and properly cropped around the QR code.');
   }
 
   console.log('Successfully extracted QR data:', qrData.substring(0, 50) + '...');
@@ -491,76 +560,22 @@ export async function extractQrFromImage(input: string): Promise<string> {
 }
 
 
-// --- Keep existing analyzeQRDetectionMethods and extractQrFromVideo ---
-// Note: analyzeQRDetectionMethods might need updating if you want to include Dynamsoft results
-export async function analyzeQRDetectionMethods(input: string): Promise<DetectionResult[]> {
-  // This function currently only analyzes jsQR and ZXing variations.
-  // TODO: Optionally integrate Dynamsoft analysis here if needed.
-  console.warn("analyzeQRDetectionMethods currently does not include Dynamsoft results.");
-  const results: DetectionResult[] = [];
-  try {
-    const img = document.createElement('img');
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-      img.src = input.startsWith('data:') ? input : `data:image/jpeg;base64,${input}`;
-    });
-    const zxingResult = await detectQRCodeWithZXing(img);
-    results.push({ method: 'ZXing-Original', success: zxingResult !== null });
-    const variations = await preprocessImageData(img);
-    for (const variation of variations) {
-      const jsqrResult = await detectQRCodeWithJsQR(variation.imageData);
-      results.push({
-        method: 'jsQR', scale: variation.params.scale, rotation: variation.params.rotation,
-        threshold: variation.params.threshold, contrast: variation.params.contrast,
-        inverted: variation.params.inverted, sharpen: variation.params.sharpen,
-        success: jsqrResult !== null
-      });
-    }
-    if (!results.some(r => r.success)) {
-      for (const variation of variations) {
-         const zxingVariationResult = await detectQRCodeWithZXing(variation.canvas);
-         results.push({
-           method: 'ZXing', scale: variation.params.scale, rotation: variation.params.rotation,
-           threshold: variation.params.threshold, contrast: variation.params.contrast,
-           inverted: variation.params.inverted, sharpen: variation.params.sharpen,
-           success: zxingVariationResult !== null
-         });
-      }
-    }
-  } catch (e) { console.error('Error during analysis:', e); }
-  return results;
-}
+// --- Commented out functions relying on removed libraries ---
 
-// Updated video function using ZXing with continuous scanning
+/*
+// Note: analyzeQRDetectionMethods relied on jsQR and ZXing variations.
+// It needs significant rework to analyze Dynamsoft performance if required.
+export async function analyzeQRDetectionMethods(input: string): Promise<any[]> { // Return type changed to any[]
+  console.warn("analyzeQRDetectionMethods is commented out as it relied on removed libraries (jsQR, ZXing).");
+  return []; // Return empty array
+}
+*/
+
+/*
+// Note: extractQrFromVideo relied on ZXing's BrowserQRCodeReader.
+// It needs to be reimplemented using Dynamsoft's VideoRecognizer if video scanning is needed.
 export function extractQrFromVideo(videoElement: HTMLVideoElement): Promise<string> {
-  console.log('Starting video QR scan (using ZXing)');
-  const codeReader = new BrowserQRCodeReader();
-
-  return new Promise<string>((resolve, reject) => {
-    try {
-      console.log('Attempting to decode QR from video stream continuously');
-      codeReader.decodeFromVideoElement(videoElement, (result, err, controls) => {
-        if (result) {
-          console.log('Video scan result:', result.getText());
-          // Stop scanning once a result is found
-          controls.stop();
-          resolve(result.getText());
-        }
-        if (err) {
-          // Log errors but don't reject immediately unless it's critical
-          // NotFoundException is common and expected until a QR code is found
-          if (!(err instanceof Error && err.name === 'NotFoundException')) {
-            console.error('Error during video scan:', err);
-            // Optionally reject on specific errors, but often we want to keep trying
-            // reject(err);
-          }
-        }
-      });
-      console.log('ZXing video scanning started.');
-    } catch (e) {
-      console.error('Error initiating QR extraction from video:', e);
-      reject(e); // Reject the promise if setup fails
-    }
-  });
+  console.warn("extractQrFromVideo is commented out as it relied on the removed ZXing library.");
+  return Promise.reject(new Error("extractQrFromVideo is not implemented with Dynamsoft yet."));
 }
+*/

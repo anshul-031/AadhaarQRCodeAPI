@@ -34,7 +34,12 @@ export default function QrTestPage() {
         '/sample_Inputs/qr_22.png',
         '/sample_Inputs/qr_26.png',
         '/sample_Inputs/qr_27.png',
-        '/sample_Inputs/qr_28.jpg'
+        '/sample_Inputs/qr_28.jpg',
+        '/sample_Inputs/qr_29.jpg',
+        '/sample_Inputs/qr_30.jpg',
+        '/sample_Inputs/qr_31.jpg',
+        '/sample_Inputs/qr_32.jpg',
+        '/sample_Inputs/qr_33.jpg'
     ];
 
     // Initialize results state
