@@ -13,45 +13,56 @@ interface TestResult {
 
 export default function QrTestPage() {
     const [results, setResults] = useState<TestResult[]>([]);
+    const [imagePaths, setImagePaths] = useState<string[]>([]);
+    const [isLoadingPaths, setIsLoadingPaths] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [isRunning, setIsRunning] = useState(false);
     const [overallSummary, setOverallSummary] = useState<string>('');
 
-    const imagePaths = [
-        // Ensure sample_Inputs is inside the /public directory
-        '/sample_Inputs/qr_1.png',
-        '/sample_Inputs/qr_2.png',
-        '/sample_Inputs/qr_3.png',
-        '/sample_Inputs/qr_5.png',
-        '/sample_Inputs/qr_6.png',
-        '/sample_Inputs/qr_9.png',
-        '/sample_Inputs/qr_10.png',
-        '/sample_Inputs/qr_11.png',
-        '/sample_Inputs/qr_12.png',
-        '/sample_Inputs/qr_13.png',
-        '/sample_Inputs/qr_18.png',
-        '/sample_Inputs/qr_19.png',
-        '/sample_Inputs/qr_21.png',
-        '/sample_Inputs/qr_22.png',
-        '/sample_Inputs/qr_26.png',
-        '/sample_Inputs/qr_27.png',
-        '/sample_Inputs/qr_28.jpg',
-        '/sample_Inputs/qr_29.jpg',
-        '/sample_Inputs/qr_30.jpg',
-        '/sample_Inputs/qr_31.jpg',
-        '/sample_Inputs/qr_32.jpg',
-        '/sample_Inputs/qr_33.jpg'
-    ];
+    // Image paths will be fetched from the API
 
-    // Initialize results state
+    // Fetch image paths on mount
     useEffect(() => {
-        setResults(imagePaths.map(path => ({
-            imagePath: path,
-            status: 'Pending',
-            time: null,
-            data: null,
-            error: null
-        })));
-    }, []); // Run only once on mount
+        async function fetchImagePaths() {
+            try {
+                const response = await fetch('/api/list-qr-images');
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                setImagePaths(data.imagePaths || []);
+                setFetchError(null);
+            } catch (error) {
+                console.error("Failed to fetch image paths:", error);
+                setFetchError(error instanceof Error ? error.message : String(error));
+                setImagePaths([]); // Ensure it's an empty array on error
+            } finally {
+                setIsLoadingPaths(false);
+            }
+        }
+        fetchImagePaths();
+    }, []);
+
+    // Initialize results state when imagePaths are loaded
+    useEffect(() => {
+        if (imagePaths.length > 0) {
+            setResults(imagePaths.map(path => ({
+                imagePath: path,
+                status: 'Pending',
+                time: null,
+                data: null,
+                error: null
+            })));
+            setOverallSummary(''); // Reset summary when paths change/load
+        } else if (!isLoadingPaths && !fetchError) {
+            setResults([]); // Clear results if no images found
+            setOverallSummary('No images found in /public/sample_Inputs.');
+        } else if (fetchError) {
+             setResults([]); // Clear results on fetch error
+             setOverallSummary(`Error loading images: ${fetchError}`);
+        }
+    }, [imagePaths, isLoadingPaths, fetchError]); // Re-run when paths, loading state, or error changes
 
     function loadImage(src: string): Promise<HTMLImageElement> {
         return new Promise((resolve, reject) => {
@@ -74,7 +85,13 @@ export default function QrTestPage() {
     }
 
     async function runTest(index: number) {
-        const imagePath = imagePaths[index];
+        const imagePath = results[index]?.imagePath; // Get path from results state
+        if (!imagePath) {
+            console.error(`Could not find imagePath for index ${index}`);
+            // Optionally update state to show an error for this specific item
+            setResults(prev => prev.map((r, i) => i === index ? { ...r, status: 'Failure', error: 'Internal error: Image path not found' } : r));
+            return; // Stop processing this item
+        }
         
         // Update status to Running
         setResults(prev => prev.map((r, i) => i === index ? { ...r, status: 'Running' } : r));
@@ -122,7 +139,7 @@ export default function QrTestPage() {
         setResults(prev => prev.map(r => ({ ...r, status: 'Pending', time: null, data: null, error: null })));
 
         // Run tests sequentially to avoid overwhelming the browser
-        for (let i = 0; i < imagePaths.length; i++) {
+        for (let i = 0; i < results.length; i++) { // Iterate based on results length
             await runTest(i);
         }
 
@@ -142,10 +159,11 @@ export default function QrTestPage() {
                 }
             });
 
-            const accuracy = ((successCount / imagePaths.length) * 100).toFixed(1);
+            const totalTests = results.length;
+            const accuracy = totalTests > 0 ? ((successCount / totalTests) * 100).toFixed(1) : '0.0';
             const avgTime = validTimes > 0 ? (totalTime / validTimes).toFixed(2) : 'N/A';
 
-            setOverallSummary(`Overall Results: ${successCount}/${imagePaths.length} successful (${accuracy}%). Average time: ${avgTime} ms.`);
+            setOverallSummary(`Overall Results: ${successCount}/${totalTests} successful (${accuracy}%). Average time: ${avgTime} ms.`);
             return finalResults; // Return unchanged state for this setter
         });
 
@@ -156,9 +174,14 @@ export default function QrTestPage() {
         <div style={{ fontFamily: 'sans-serif', padding: '20px' }}>
             <h1>QR Code Extraction Test</h1>
             <p>Testing the <code>extractQrFromImage</code> function from <code>@/lib/qr-scanner</code> against images in <code>/public/sample_Inputs/</code>.</p>
-            <button onClick={runAllTests} disabled={isRunning}>
-                {isRunning ? 'Running...' : 'Run Tests'}
-            </button>
+            {isLoadingPaths && <p>Loading image list...</p>}
+            {fetchError && <p style={{ color: 'red' }}>Error loading image list: {fetchError}</p>}
+            {!isLoadingPaths && !fetchError && imagePaths.length === 0 && <p>No QR images found in /public/sample_Inputs.</p>}
+            {!isLoadingPaths && !fetchError && imagePaths.length > 0 && (
+                 <button onClick={runAllTests} disabled={isRunning || isLoadingPaths || !!fetchError}>
+                     {isRunning ? 'Running...' : `Run Tests (${imagePaths.length} images)`}
+                 </button>
+            )}
             <div style={{ marginTop: '20px', fontWeight: 'bold' }}>{overallSummary}</div>
             <table style={{ borderCollapse: 'collapse', width: '100%', marginTop: '20px' }}>
                 <thead>
