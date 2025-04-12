@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
@@ -8,18 +9,8 @@ import { Loader2, QrCode, Upload, Camera, Search, ScanLine } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Webcam from 'react-webcam';
-
-interface AadhaarData {
-  name: string;
-  gender: string;
-  dob: string;
-  address: string;
-  photo?: string | null;
-  issued_date: string;
-  issued_time: string;
-  mobile_number: string;
-  uid?: string;
-}
+import { extractQrFromImage } from '@/lib/qr-scanner';
+import { AadhaarData } from '@/lib/aadhaar-processor';
 
 interface ScannerDevice {
   id: string;
@@ -27,17 +18,24 @@ interface ScannerDevice {
 }
 
 export default function Home() {
-  const [qrData, setQrData] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AadhaarData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string | undefined>(undefined);
+  const [scanResolution, setScanResolution] = useState('300');
+  const [scanArea, setScanArea] = useState('A4');
+  const [scanColorMode, setScanColorMode] = useState('Color');
+
+  // Scanner configurations
+  const resolutionOptions = ['100', '200', '300', '400', '600'];
+  const areaOptions = ['A4', 'A5', 'A6', 'Legal', 'Letter'];
+  const colorOptions = ['Color', 'Grayscale', 'BlackAndWhite'];
   const [scannerList, setScannerList] = useState<ScannerDevice[]>([]);
   const [selectedScanner, setSelectedScanner] = useState<string>('');
   const [wsError, setWsError] = useState<string | null>(null);
-  const [userName, setUserName] = useState('');
+  const [userName, setUserName] = useState('Adani');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const webcamRef = useRef<Webcam>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -45,21 +43,21 @@ export default function Home() {
   // Initialize WebSocket connection
   useEffect(() => {
     const connectWebSocket = () => {
-      console.log('Connecting to scanner service...');
+      // console.log('Connecting to scanner service...');
       const ws = new WebSocket('ws://localhost:3500');
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log('Connected to scanner service');
+        // console.log('Connected to scanner service');
         setWsError(null);
         // Request scanner list on connection
         ws.send(JSON.stringify({ type: 'get-scanners' }));
       };
 
-      ws.onmessage = (event) => {
+      ws.onmessage = async (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log('Received message:', message);
+          // console.log('Received message:', message);
 
           switch (message.type) {
             case 'scanners-list':
@@ -68,9 +66,12 @@ export default function Home() {
 
             case 'scan-complete':
               if (message.data.success && message.data.base64) {
-                // Process the scanned image data
-                handleScannedImage(message.data.base64);
+                console.timeEnd('Scan Time');
+                // Extract QR data from scanned image
+                handleProcessedData(message.data.base64);
               } else {
+                console.timeEnd('Scan Time');
+                console.timeEnd('Total Process Time');
                 setError('Failed to receive scanned image data');
               }
               break;
@@ -84,17 +85,17 @@ export default function Home() {
               break;
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+          // console.error('Error parsing WebSocket message:', error);
         }
       };
 
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        // console.error('WebSocket error:', error);
         setWsError('Failed to connect to scanner service');
       };
 
       ws.onclose = () => {
-        console.log('Scanner service connection closed');
+        // console.log('Scanner service connection closed');
         setWsError('Connection to scanner service lost');
         // Try to reconnect after 5 seconds
         setTimeout(connectWebSocket, 5000);
@@ -110,8 +111,8 @@ export default function Home() {
     };
   }, []);
 
-  // Handle scanned image processing
-  const handleScannedImage = async (base64Data: string) => {
+  // Handle processed data
+  const handleProcessedData = async (input: string) => {
     if (!userName.trim()) {
       setError('Please enter your name first');
       return;
@@ -122,33 +123,50 @@ export default function Home() {
     setResult(null);
 
     try {
-      // Extract the raw base64 data from the data URL
-      const rawBase64Data = base64Data.replace(/^data:image\/\w+;base64,/, '');
+      console.log('Starting QR extraction');
+      console.time('QR Extraction Time');
+      const qrData = await extractQrFromImage(input);
+      console.timeEnd('QR Extraction Time');
+      
+      if (!qrData) {
+        console.error('QR extraction returned null');
+        console.timeEnd('Total Process Time');
+        throw new Error('Failed to extract data from QR code. Please ensure the image contains a valid Aadhaar QR code and try again.');
+      }
 
+      console.log('QR data extracted successfully, sending to API');
+      console.time('API Response Time');
       const response = await fetch('/api/aadhaar', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          qrData: rawBase64Data,
-          userName: userName
+        body: JSON.stringify({
+          qrData,
+          userName
         }),
       });
 
       const data = await response.json();
+      console.timeEnd('API Response Time');
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to process scanned image');
+        console.error('API error:', data);
+        console.timeEnd('Total Process Time');
+        throw new Error(data.error || 'Failed to process QR data');
       }
 
-      if (data.success && data.data) {
-        setResult(data.data);
-      } else {
-        throw new Error(data.error || 'Failed to process scanned image');
-      }
+      console.log('API call successful');
+      setResult(data.data);
+      console.timeEnd('Total Process Time');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Error in handleProcessedData:', err);
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred while processing the QR code. Please try again.');
+      }
+      console.timeEnd('Total Process Time');
     } finally {
       setLoading(false);
     }
@@ -170,9 +188,18 @@ export default function Home() {
     setError(null);
     setResult(null);
 
+    // Record scan start time
+    console.time('Total Process Time');
+    console.time('Scan Time');
+
     wsRef.current.send(JSON.stringify({
       type: 'start-scan',
-      deviceId: selectedScanner
+      deviceId: selectedScanner,
+      settings: {
+        resolution: parseInt(scanResolution),
+        area: scanArea,
+        colorMode: scanColorMode
+      }
     }));
   };
 
@@ -205,7 +232,7 @@ export default function Home() {
     getCameras();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleManualInput = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userName.trim()) {
       setError('Please enter your name first');
@@ -216,34 +243,17 @@ export default function Home() {
     setError(null);
     setResult(null);
 
-    try {
-      const response = await fetch('/api/aadhaar', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          qrData,
-          userName: userName
-        }),
-      });
+    const form = e.target as HTMLFormElement;
+    const input = form.querySelector('input') as HTMLInputElement;
+    const qrData = input.value;
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to parse QR data');
-      }
-
-      if (data.success && data.data) {
-        setResult(data.data);
-      } else {
-        setError(data.error || 'Failed to parse QR data');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
+    if (!qrData) {
+      setError('Please enter QR data');
       setLoading(false);
+      return;
     }
+
+    await handleProcessedData(qrData);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -263,30 +273,7 @@ export default function Home() {
       const reader = new FileReader();
       reader.onload = async (event) => {
         const base64Data = event.target?.result as string;
-        
-        const response = await fetch('/api/aadhaar', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            qrData: base64Data,
-            userName: userName
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to parse QR code');
-        }
-
-        if (data.success && data.data) {
-          setResult(data.data);
-        } else {
-          setError(data.error || 'Failed to parse QR code');
-        }
-        setLoading(false);
+        await handleProcessedData(base64Data);
       };
 
       reader.onerror = () => {
@@ -313,39 +300,8 @@ export default function Home() {
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const response = await fetch('/api/aadhaar', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          qrData: imageSrc,
-          userName: userName
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to parse QR code');
-      }
-
-      if (data.success && data.data) {
-        setResult(data.data);
-        setShowCamera(false);
-      } else {
-        setError(data.error || 'Failed to parse QR code');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
+    await handleProcessedData(imageSrc);
+    setShowCamera(false);
   };
 
   const videoConstraints = {
@@ -388,7 +344,7 @@ export default function Home() {
             />
           </div>
 
-          <Tabs defaultValue="camera" className="space-y-4" onValueChange={(value) => localStorage.setItem('lastUsedTab', value)}>
+          <Tabs defaultValue="camera" className="space-y-4">
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="camera">Camera</TabsTrigger>
               <TabsTrigger value="scan">Scan</TabsTrigger>
@@ -414,6 +370,55 @@ export default function Home() {
                     ))}
                   </select>
                 </div>
+
+                {/* Scanner Settings */}
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Resolution */}
+                  <div>
+                    <label className="text-sm text-gray-600 mb-1 block">Resolution (DPI)</label>
+                    <select
+                      className="w-full p-2 border rounded-md"
+                      value={scanResolution}
+                      onChange={(e) => setScanResolution(e.target.value)}
+                      disabled={loading}
+                    >
+                      {resolutionOptions.map((res) => (
+                        <option key={res} value={res}>{res} DPI</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Scan Area */}
+                  <div>
+                    <label className="text-sm text-gray-600 mb-1 block">Paper Size</label>
+                    <select
+                      className="w-full p-2 border rounded-md"
+                      value={scanArea}
+                      onChange={(e) => setScanArea(e.target.value)}
+                      disabled={loading}
+                    >
+                      {areaOptions.map((area) => (
+                        <option key={area} value={area}>{area}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Color Mode */}
+                  <div>
+                    <label className="text-sm text-gray-600 mb-1 block">Color Mode</label>
+                    <select
+                      className="w-full p-2 border rounded-md"
+                      value={scanColorMode}
+                      onChange={(e) => setScanColorMode(e.target.value)}
+                      disabled={loading}
+                    >
+                      {colorOptions.map((mode) => (
+                        <option key={mode} value={mode}>{mode}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 {!selectedScanner && (
                   <div className="text-sm text-gray-600">
                     No scanners found. Make sure the Aadhaar Scanner Service is running and your scanner is connected.
@@ -422,7 +427,7 @@ export default function Home() {
                 <div className="flex justify-between space-x-4">
                   <Button
                     onClick={() => {
-                      console.log('Refreshing scanner list...');
+                      // console.log('Refreshing scanner list...');
                       wsRef.current?.send(JSON.stringify({ type: 'get-scanners' }));
                     }}
                     variant="outline"
@@ -534,12 +539,10 @@ export default function Home() {
             </TabsContent>
 
             <TabsContent value="manual">
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleManualInput} className="space-y-4">
                 <div>
                   <Input
                     type="text"
-                    value={qrData}
-                    onChange={(e) => setQrData(e.target.value)}
                     placeholder="Enter QR code data (base64 or hexadecimal format)"
                     className="w-full"
                     required
@@ -549,7 +552,7 @@ export default function Home() {
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={loading || !qrData || !userName.trim()}
+                  disabled={loading || !userName.trim()}
                 >
                   {loading ? (
                     <>

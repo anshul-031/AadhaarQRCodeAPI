@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Extraction Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .status-success { color: green; }
+        .status-failure { color: red; }
+        #overall-summary { margin-top: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>QR Code Extraction Test</h1>
+    <p>Testing the <code>extractQrFromImage</code> function from <code>lib/qr-scanner.ts</code> against images in <code>sample_Inputs/</code>.</p>
+    <button id="run-tests-btn">Run Tests</button>
+    <div id="overall-summary"></div>
+    <table>
+        <thead>
+            <tr>
+                <th>Image</th>
+                <th>Status</th>
+                <th>Time (ms)</th>
+                <th>Data Preview / Error</th>
+            </tr>
+        </thead>
+        <tbody id="results-body">
+            <!-- Results will be populated here -->
+        </tbody>
+    </table>
+
+    <!-- IMPORTANT: This assumes the compiled JS bundle from Next.js makes -->
+    <!-- extractQrFromImage available, potentially via a global or module. -->
+    <!-- If this doesn't work, the script loading needs adjustment. -->
+    <!-- You might need to manually include a compiled bundle or use CDNs. -->
+    
+    <!-- We need the actual compiled JS output from Next.js that includes qr-scanner -->
+    <!-- For testing, let's *temporarily* include the source via type="module" -->
+    <!-- This is NOT production-ready but allows testing in dev -->
+     <script type="module">
+        // Dynamically import the scanner function. 
+        // Adjust the path if your build process places it elsewhere.
+        // This assumes the dev server can resolve '@/' paths or you adjust it.
+        // If running this HTML directly (not via dev server), this import will fail.
+        let extractQrFromImage;
+        try {
+            // Attempt to import assuming dev server resolution or similar setup
+            const qrScannerModule = await import('/_next/static/chunks/pages/_app.js'); // Placeholder path - likely incorrect
+            // Find the exported function - This part is highly speculative
+            // You might need to inspect the actual bundled output to find the function
+             if (qrScannerModule && typeof qrScannerModule.extractQrFromImage === 'function') {
+                 extractQrFromImage = qrScannerModule.extractQrFromImage;
+             } else {
+                 // Fallback: Try finding it on the window object if bundled globally (less likely)
+                 if (window.qrScanner && typeof window.qrScanner.extractQrFromImage === 'function') {
+                    extractQrFromImage = window.qrScanner.extractQrFromImage;
+                 } else {
+                    console.error("Could not find extractQrFromImage function. Bundle inspection needed.");
+                    alert("Test setup error: Could not find the extractQrFromImage function. Check console.");
+                 }
+             }
+        } catch (e) {
+             console.error("Error importing QR scanner module:", e);
+             alert("Test setup error: Could not load the QR scanner code. Check console and module path.");
+        }
+
+
+        const imagePaths = [
+            'sample_Inputs/qr_1.png',
+            'sample_Inputs/qr_2.png',
+            'sample_Inputs/qr_3.png',
+            'sample_Inputs/qr_5.png',
+            'sample_Inputs/qr_6.png',
+            'sample_Inputs/qr_9.png',
+            'sample_Inputs/qr_10.png',
+            'sample_Inputs/qr_11.png',
+            'sample_Inputs/qr_12.png',
+            'sample_Inputs/qr_13.png',
+            'sample_Inputs/qr_18.png',
+            'sample_Inputs/qr_19.png',
+            'sample_Inputs/qr_21.png',
+            'sample_Inputs/qr_22.png',
+            'sample_Inputs/qr_26.png',
+            'sample_Inputs/qr_27.png',
+            'sample_Inputs/qr_28.jpg'
+        ];
+
+        const resultsBody = document.getElementById('results-body');
+        const runTestsBtn = document.getElementById('run-tests-btn');
+        const overallSummaryDiv = document.getElementById('overall-summary');
+
+        function loadImage(src) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = (err) => reject(`Failed to load image: ${src} - ${err}`);
+                img.src = src;
+            });
+        }
+
+        function imageToBase64(img) {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            // Use jpeg for jpg images, png otherwise
+            const format = img.src.toLowerCase().endsWith('.jpg') || img.src.toLowerCase().endsWith('.jpeg') ? 'image/jpeg' : 'image/png';
+            return canvas.toDataURL(format);
+        }
+
+        async function runTest(imagePath) {
+            const row = resultsBody.insertRow();
+            const cellImage = row.insertCell();
+            const cellStatus = row.insertCell();
+            const cellTime = row.insertCell();
+            const cellData = row.insertCell();
+
+            cellImage.textContent = imagePath.split('/').pop(); // Get filename
+            cellStatus.textContent = 'Running...';
+            cellTime.textContent = '-';
+            cellData.textContent = '-';
+
+            let startTime, endTime, duration, resultData = null, error = null;
+
+            try {
+                const img = await loadImage(imagePath);
+                const base64Data = imageToBase64(img);
+
+                startTime = performance.now();
+                // Ensure the function is loaded before calling
+                if (typeof extractQrFromImage !== 'function') {
+                     throw new Error("extractQrFromImage function not available.");
+                }
+                resultData = await extractQrFromImage(base64Data);
+                endTime = performance.now();
+                duration = endTime - startTime;
+
+            } catch (err) {
+                console.error(`Error processing ${imagePath}:`, err);
+                endTime = performance.now(); // Still record end time on error
+                duration = startTime ? endTime - startTime : 0; // Calculate duration if start time exists
+                error = err instanceof Error ? err.message : String(err);
+            }
+
+            // Update row with results
+            if (resultData) {
+                cellStatus.textContent = 'Success';
+                cellStatus.className = 'status-success';
+                cellData.textContent = resultData.substring(0, 100) + (resultData.length > 100 ? '...' : '');
+            } else {
+                cellStatus.textContent = 'Failure';
+                cellStatus.className = 'status-failure';
+                cellData.textContent = error || 'Unknown error';
+            }
+            cellTime.textContent = duration.toFixed(2);
+
+            return { success: !!resultData, duration };
+        }
+
+        async function runAllTests() {
+            if (!extractQrFromImage) {
+                 alert("Cannot run tests: extractQrFromImage function is not loaded. Check console.");
+                 return;
+            }
+
+            runTestsBtn.disabled = true;
+            runTestsBtn.textContent = 'Running...';
+            resultsBody.innerHTML = ''; // Clear previous results
+            overallSummaryDiv.textContent = '';
+
+            let successCount = 0;
+            let totalTime = 0;
+            const results = [];
+
+            for (const imagePath of imagePaths) {
+                const result = await runTest(imagePath);
+                results.push(result);
+                if (result.success) {
+                    successCount++;
+                }
+                totalTime += result.duration;
+            }
+
+            const accuracy = ((successCount / imagePaths.length) * 100).toFixed(1);
+            const avgTime = (totalTime / imagePaths.length).toFixed(2);
+
+            overallSummaryDiv.textContent = `Overall Results: ${successCount}/${imagePaths.length} successful (${accuracy}%). Average time: ${avgTime} ms.`;
+            runTestsBtn.disabled = false;
+            runTestsBtn.textContent = 'Run Tests Again';
+        }
+
+        runTestsBtn.addEventListener('click', runAllTests);
+
+        // Optional: Run tests automatically on load
+        // runAllTests(); 
+    </script>
+</body>
+</html>
