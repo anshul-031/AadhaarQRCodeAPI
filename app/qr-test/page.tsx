@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { extractQrFromImage } from '@/lib/qr-scanner'; // Direct import for raw QR extraction
+// Dynamically import qr-scanner later
 
 // Define a more specific type for Aadhaar data if possible, or use 'any' for now
 interface AadhaarData {
@@ -25,6 +25,7 @@ interface TestResult {
     rawData: string | null; // Raw QR data string
     parsedData: AadhaarData | null; // Parsed Aadhaar data from API
     error: string | null;
+    processedImageSrc: string | null; // Base64 source of the processed/cropped image
 }
 
 // Helper function to format keys for display
@@ -80,7 +81,8 @@ export default function QrTestPage() {
                 apiCallTime: null,
                 rawData: null,
                 parsedData: null,
-                error: null
+                error: null,
+                processedImageSrc: null // Initialize processed image src
             })));
             setOverallSummary('');
         } else if (!isLoadingPaths && !fetchError) {
@@ -119,13 +121,14 @@ export default function QrTestPage() {
             return;
         }
 
-        setResults(prev => prev.map((r, i) => i === index ? { ...r, status: 'Running', error: null, rawData: null, parsedData: null, time: null, qrReadTime: null, apiCallTime: null } : r));
+        setResults(prev => prev.map((r, i) => i === index ? { ...r, status: 'Running', error: null, rawData: null, parsedData: null, time: null, qrReadTime: null, apiCallTime: null, processedImageSrc: null } : r));
 
         let qrReadStartTime: number | null = null, qrReadEndTime: number | null = null;
         let apiCallStartTime: number | null = null, apiCallEndTime: number | null = null;
         let rawQrData: string | null = null;
         let finalParsedData: AadhaarData | null = null;
         let finalError: string | null = null;
+        let finalProcessedImageSrc: string | null = null;
 
         try {
             // Step 1: Load image and extract raw QR data
@@ -133,40 +136,48 @@ export default function QrTestPage() {
             const base64Data = imageToBase64(img);
 
             qrReadStartTime = performance.now();
-            rawQrData = await extractQrFromImage(base64Data); // Get raw QR string
+            const { extractQrFromImage } = await import('@/lib/qr-scanner'); // Dynamic import
+            const extractionResult = await extractQrFromImage(base64Data);
+            // Ensure rawQrData is explicitly assigned the string or null
+            rawQrData = extractionResult.qrData;
+            finalProcessedImageSrc = extractionResult.processedImageSrc; // Store the processed image src
             qrReadEndTime = performance.now();
 
+            // Check if QR extraction failed (qrData is null)
             if (!rawQrData) {
-                throw new Error("QR code not found or could not be decoded by frontend scanner.");
+                // Set error, but don't throw, allowing state update with processed image
+                finalError = "QR code not found or could not be decoded by frontend scanner.";
+                // Skip API call if QR data is missing
+            } else {
+                // Step 2: Call the backend API only if QR data was found
+                apiCallStartTime = performance.now();
+                const response = await fetch('/api/aadhaar', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        // Use the qrData property directly from the extraction result
+                        qrData: extractionResult.qrData,
+                        userName: `qr-test-user-${index}`
+                    }),
+                });
+                apiCallEndTime = performance.now();
+
+                const resultJson = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(resultJson.error || `API error: ${response.status}`);
+                }
+
+                if (!resultJson.success) {
+                     throw new Error(resultJson.error || 'API call failed (success: false)');
+                }
+
+                finalParsedData = resultJson.data; // Store the parsed data object
             }
 
-            // Step 2: Call the backend API with the raw QR data
-            apiCallStartTime = performance.now();
-            const response = await fetch('/api/aadhaar', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    qrData: rawQrData,
-                    userName: `qr-test-user-${index}` // Simple unique user for logging
-                }),
-            });
-            apiCallEndTime = performance.now();
-
-            const resultJson = await response.json();
-
-            if (!response.ok) {
-                throw new Error(resultJson.error || `API error: ${response.status}`);
-            }
-
-            if (!resultJson.success) {
-                 throw new Error(resultJson.error || 'API call failed (success: false)');
-            }
-
-            finalParsedData = resultJson.data; // Store the parsed data object
-
-        } catch (err) {
+        } catch (err) { // This catch block now handles errors other than QR not found
             console.error(`Error processing ${imagePath}:`, err);
             // Ensure end times are set if an error occurred mid-process
             if (qrReadStartTime && !qrReadEndTime) qrReadEndTime = performance.now();
@@ -180,6 +191,7 @@ export default function QrTestPage() {
         const totalDuration = (qrReadDuration ?? 0) + (apiCallDuration ?? 0);
 
         // Update final result for this image
+        console.log(`Updating state for index ${index}. Processed image available: ${!!finalProcessedImageSrc}. Status: ${finalParsedData ? 'Success' : 'Failure'}`);
         setResults(prev => prev.map((r, i) => {
             if (i === index) {
                 return {
@@ -190,7 +202,8 @@ export default function QrTestPage() {
                     apiCallTime: apiCallDuration,
                     rawData: rawQrData, // Store raw data for reference
                     parsedData: finalParsedData, // Store parsed data
-                    error: finalError
+                    error: finalError,
+                    processedImageSrc: finalProcessedImageSrc // Store processed image src in state
                 };
             }
             return r;
@@ -200,7 +213,7 @@ export default function QrTestPage() {
     async function runAllTests() {
         setIsRunning(true);
         setOverallSummary('Running tests...');
-        setResults(prev => prev.map(r => ({ ...r, status: 'Pending', time: null, qrReadTime: null, apiCallTime: null, rawData: null, parsedData: null, error: null })));
+        setResults(prev => prev.map(r => ({ ...r, status: 'Pending', time: null, qrReadTime: null, apiCallTime: null, rawData: null, parsedData: null, error: null, processedImageSrc: null })));
 
         for (let i = 0; i < results.length; i++) {
             await runTest(i);
@@ -262,8 +275,10 @@ export default function QrTestPage() {
                         <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left', backgroundColor: '#f2f2f2', width: '15%' }}>Image</th>
                         <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left', backgroundColor: '#f2f2f2', width: '10%' }}>Status</th>
                         <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left', backgroundColor: '#f2f2f2', width: '15%' }}>Time (QR/API ms)</th>
-                        <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left', backgroundColor: '#f2f2f2', width: '15%' }}>Photo</th>
-                        <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left', backgroundColor: '#f2f2f2', width: '45%' }}>Details / Error</th>
+                        <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left', backgroundColor: '#f2f2f2', width: '15%' }}>Processed Img</th>
+                        <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left', backgroundColor: '#f2f2f2', width: '15%' }}>Aadhaar Photo</th>
+                        <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left', backgroundColor: '#f2f2f2', width: '20%' }}>Details / Error</th>
+                        <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left', backgroundColor: '#f2f2f2', width: '10%' }}>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -281,6 +296,15 @@ export default function QrTestPage() {
                                 {result.qrReadTime !== null ? result.qrReadTime.toFixed(1) : '-'} / {result.apiCallTime !== null ? result.apiCallTime.toFixed(1) : '-'}
                             </td>
                              <td style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'center' }}>
+                                {result.processedImageSrc ? (
+                                    <img
+                                        src={result.processedImageSrc}
+                                        alt="Processed Image"
+                                        style={{ maxWidth: '60px', maxHeight: '60px', objectFit: 'contain' }}
+                                    />
+                                ) : (result.status !== 'Pending' && result.status !== 'Running') ? '(Not processed)' : '-'}
+                            </td>
+                            <td style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'center' }}>
                                 {result.status === 'Success' && result.parsedData?.photo ? (
                                     <img
                                         src={`data:image/jpeg;base64,${result.parsedData.photo}`}
@@ -304,6 +328,20 @@ export default function QrTestPage() {
                                         </div>
                                       )
                                     : result.error || (result.status === 'Running' ? 'Processing...' : '-')}
+                            </td>
+                            <td style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'center' }}>
+                                <button
+                                    onClick={() => runTest(index)}
+                                    disabled={isRunning || result.status === 'Running'}
+                                    style={{
+                                        padding: '4px 8px',
+                                        fontSize: '0.8em',
+                                        cursor: (isRunning || result.status === 'Running') ? 'not-allowed' : 'pointer',
+                                        opacity: (isRunning || result.status === 'Running') ? 0.5 : 1
+                                    }}
+                                >
+                                    Run
+                                </button>
                             </td>
                         </tr>
                     ))}

@@ -40,7 +40,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('Received QR data:', qrData.substring(0, 100) + '...');
+    // Add type check and detailed logging
+    if (typeof qrData !== 'string') {
+      console.error(`API Error: Expected qrData to be a string, but received type ${typeof qrData}. Value:`, qrData);
+      errorOccurred = true; // Mark error occurred
+      // Log failure before returning
+      if (userName) { // Log only if userName was successfully extracted
+          try {
+              await logFailedQr({
+                  qr_details: `Invalid qrData type received: ${typeof qrData}`,
+                  error_message: `Expected string, got ${typeof qrData}`,
+                  timestamp: new Date(),
+                  user_name: userName
+              });
+          } catch (logError) {
+              console.error("Error logging failed QR due to invalid type:", logError);
+          }
+      }
+      return NextResponse.json(
+        { error: `Invalid qrData type received: ${typeof qrData}` },
+        { status: 400 }
+      );
+    }
+    // If it's a string, proceed with logging substring
+    console.log('Received QR data (string):', qrData.substring(0, 100) + '...');
 
     let parsedData: any;
 

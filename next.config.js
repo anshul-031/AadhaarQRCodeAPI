@@ -8,6 +8,9 @@ const nextConfig = {
   images: { unoptimized: true },
   webpack: (config, { isServer }) => {
     if (!isServer) {
+      // Add fallback for 'fs' module on the client side
+      config.resolve.fallback = { fs: false };
+
       config.plugins.push(
         new CopyPlugin({
           patterns: [

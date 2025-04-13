@@ -9,7 +9,7 @@ import { Loader2, QrCode, Upload, Camera, Search, ScanLine } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Webcam from 'react-webcam';
-import { extractQrFromImage } from '@/lib/qr-scanner';
+// Dynamically import qr-scanner later
 import { AadhaarData } from '@/lib/aadhaar-processor';
 
 interface ScannerDevice {
@@ -125,10 +125,14 @@ export default function Home() {
     try {
       console.log('Starting QR extraction');
       console.time('QR Extraction Time');
-      const qrData = await extractQrFromImage(input);
+      const { extractQrFromImage } = await import('@/lib/qr-scanner'); // Dynamic import
+      const extractionResult = await extractQrFromImage(input);
+      const qrDataString = extractionResult.qrData; // Extract the string data
+      // We don't need extractionResult.processedImageSrc in this component
       console.timeEnd('QR Extraction Time');
       
-      if (!qrData) {
+      // Check if the extracted string is null or empty
+      if (!qrDataString) {
         console.error('QR extraction returned null');
         console.timeEnd('Total Process Time');
         throw new Error('Failed to extract data from QR code. Please ensure the image contains a valid Aadhaar QR code and try again.');
@@ -142,7 +146,7 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          qrData,
+          qrData: qrDataString, // Send the extracted string
           userName
         }),
       });
