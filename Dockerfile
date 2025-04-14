@@ -9,6 +9,11 @@ RUN npm install
 
 COPY . .
 
+# Declare build-time arguments
+ARG NEXT_PUBLIC_DYNAMSOFT_LICENSE_KEY
+# Set environment variables from arguments for the build process
+ENV NEXT_PUBLIC_DYNAMSOFT_LICENSE_KEY=$NEXT_PUBLIC_DYNAMSOFT_LICENSE_KEY
+
 RUN npm run build
 
 # Stage 2: Build Python dependencies
@@ -44,6 +49,13 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY . .
+
+# Declare runtime arguments
+ARG NEXT_PUBLIC_DYNAMSOFT_LICENSE_KEY
+ARG DATABASE_URL
+# Set runtime environment variables
+ENV NEXT_PUBLIC_DYNAMSOFT_LICENSE_KEY=$NEXT_PUBLIC_DYNAMSOFT_LICENSE_KEY
+ENV DATABASE_URL=$DATABASE_URL
 
 # Expose port
 EXPOSE 3000
